@@ -14,9 +14,9 @@ export async function importData(req, res) {
   try {
     const {
       organizations, users, patients, appointments, consultations,
-      prescriptions, labOrders, labResults, radiologyOrders,
+      prescriptions, labOrders, labResults, radiologyOrders, radiologyReports,
       invoices, payments, pharmacySales, pharmacyDrugs,
-      admissions, wards, preTriages, queueItems
+      admissions, wards, preTriages, queueItems, deathCertificates
     } = req.body
 
     // Disable FK checks for the duration of import
@@ -68,10 +68,12 @@ export async function importData(req, res) {
     results.labOrders       = await upsertMany('labOrder', labOrders)
     results.labResults      = await upsertMany('labResult', labResults)
     results.radiologyOrders = await upsertMany('radiologyOrder', radiologyOrders)
+    results.radiologyReports = await upsertMany('radiologyReport', radiologyReports)
     results.admissions      = await upsertMany('admission', admissions)
     results.invoices        = await upsertMany('invoice', invoices)
     results.payments        = await upsertMany('payment', payments)
     results.pharmacySales   = await upsertMany('pharmacySale', pharmacySales)
+    results.deathCertificates = await upsertMany('deathCertificate', deathCertificates)
 
     // Re-enable FK checks
     await db.$executeRawUnsafe(`SET session_replication_role = 'origin'`)

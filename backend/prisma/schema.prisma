@@ -725,7 +725,7 @@ model DeathCertificate {
   pregnancyRelated String? // pregnant, within_42_days, within_1_year, not_related
 
   // Certification
-  certifiedById          String
+  certifiedById          String?
   certificationDate      DateTime @default(now())
   certifierQualification String? // MD, Nurse, etc.
   licenseNumber          String?
@@ -745,7 +745,7 @@ model DeathCertificate {
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  certifiedBy  User         @relation("CertifiedBy", fields: [certifiedById], references: [id])
+  certifiedBy  User?        @relation("CertifiedBy", fields: [certifiedById], references: [id])
   issuedBy     User?        @relation("IssuedBy", fields: [issuedById], references: [id])
 
   @@index([organizationId])

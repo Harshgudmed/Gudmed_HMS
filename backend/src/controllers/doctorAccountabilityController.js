@@ -70,6 +70,7 @@ export async function handleGet(req, res, next) {
 
 export async function handlePost(req, res, next) {
   try {
+    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource } = req.query
 
     if (resource === 'config') {
@@ -83,7 +84,7 @@ export async function handlePost(req, res, next) {
         })
       } else {
         config = await db.doctorCommissionConfig.create({
-          data: { doctorId, commissionType, commissionRate: parseFloat(commissionRate) || 0, isActive, notes: notes || null },
+          data: { organizationId: ORG_ID, doctorId, commissionType, commissionRate: parseFloat(commissionRate) || 0, isActive, notes: notes || null },
         })
       }
       return res.json({ success: true, data: config })
@@ -93,6 +94,7 @@ export async function handlePost(req, res, next) {
       const { doctorId, invoiceId, invoiceAmount, commissionRate, commissionType, commissionAmount, period } = req.body
       const commission = await db.doctorCommission.create({
         data: {
+          organizationId: ORG_ID,
           doctorId,
           invoiceId: invoiceId || null,
           invoiceAmount: parseFloat(invoiceAmount) || 0,
