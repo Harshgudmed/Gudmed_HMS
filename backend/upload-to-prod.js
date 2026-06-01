@@ -35,6 +35,8 @@ async function main() {
     pharmacyDrugs:          await grab('pharmacyDrug'),
     prescriptions:          await grab('prescription'),
     pharmacySales:          await grab('pharmacySale'),
+    labTests:               await grab('labTest'),
+    radiologyExams:         await grab('radiologyExam'),
     labOrders:              await grab('labOrder'),
     labResults:             await grab('labResult'),
     radiologyOrders:        await grab('radiologyOrder'),

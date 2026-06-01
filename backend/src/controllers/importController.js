@@ -110,16 +110,26 @@ export async function importData(req, res) {
       return r
     })
 
-    // Stage 5 — lab & radiology
+    // Stage 5 — lab & radiology (catalogs first: testId/examId FKs)
+    await copy('labTest', b.labTests)
+    const labTestIds = await ids('labTest')
+    await copy('radiologyExam', b.radiologyExams)
+    const examIds = await ids('radiologyExam')
+
     await copy('labOrder', b.labOrders, r => {
       if (!patientIds.has(r.patientId)) return null
       if (r.consultationId && !consultIds.has(r.consultationId)) r.consultationId = null
       return r
     })
     const labOrderIds = await ids('labOrder')
-    await copy('labResult', b.labResults, r => labOrderIds.has(r.orderId) ? r : null)
+    await copy('labResult', b.labResults, r => {
+      if (!labOrderIds.has(r.orderId)) return null
+      if (!labTestIds.has(r.testId)) return null
+      return r
+    })
     await copy('radiologyOrder', b.radiologyOrders, r => {
       if (!patientIds.has(r.patientId)) return null
+      if (!examIds.has(r.examId)) return null
       if (r.consultationId && !consultIds.has(r.consultationId)) r.consultationId = null
       return r
     })
