@@ -1,90 +1,161 @@
 import { db } from '../config/db.js'
 
-// Temporary import endpoint — run once to seed production from local backup
-// Protected by secret key
+// Full data import endpoint — runs the FK-ordered, self-healing migration
+// server-side (where the DB is reachable internally). Protected by secret.
+//
+// POST /api/import  with header x-import-secret
+// Body: { organizations, departments, users, patients, wards, beds,
+//   admissions, appointments, consultations, preTriages, triageAssessments,
+//   queueItems, pharmacyDrugs, prescriptions, pharmacySales, labOrders,
+//   labResults, radiologyOrders, radiologyReports, invoices, payments,
+//   deathCertificates, doctorCommissionConfigs, doctorCommissions }
 export async function importData(req, res) {
   const secret = req.headers['x-import-secret']
   if (secret !== process.env.IMPORT_SECRET && secret !== 'GudMedImport2026!') {
     return res.status(403).json({ error: 'Forbidden' })
   }
 
+  const b = req.body || {}
   const results = {}
   const errors = []
 
-  try {
-    const {
-      organizations, users, patients, appointments, consultations,
-      prescriptions, labOrders, labResults, radiologyOrders, radiologyReports,
-      invoices, payments, pharmacySales, pharmacyDrugs,
-      admissions, wards, preTriages, queueItems, deathCertificates
-    } = req.body
-
-    // Disable FK checks for the duration of import
-    await db.$executeRawUnsafe(`SET session_replication_role = 'replica'`)
-
-    // Helper: clean record removing auto-managed and problematic FK fields
-    function clean(rec) {
-      const {
-        updatedAt, createdAt,
-        departmentId, buildingId, floorId, roomId,
-        referredById, supervisorId, reviewedById,
-        createdById, updatedById, cancelledById,
-        soldById, servedById, invitedById,
-        ...rest
-      } = rec
-      return rest
-    }
-
-    // Helper: upsert many records
-    async function upsertMany(model, records, idField = 'id') {
-      let count = 0
-      for (const rec of (records || [])) {
-        try {
-          const data = clean(rec)
-          await db[model].upsert({
-            where:  { [idField]: rec[idField] },
-            update: data,
-            create: data,
-          })
-          count++
-        } catch (e) {
-          errors.push(`${model}/${rec[idField]}: ${e.message.slice(0, 300)}`)
-        }
+  // Upsert an array of rows with an optional per-row fix() that can null
+  // FK fields or return null to skip the row.
+  async function copy(model, rows, fix) {
+    let ok = 0, fail = 0, skip = 0
+    for (const row of (rows || [])) {
+      const data = fix ? fix({ ...row }) : { ...row }
+      if (data === null) { skip++; continue }
+      try {
+        await db[model].upsert({ where: { id: row.id }, update: data, create: data })
+        ok++
+      } catch (e) {
+        fail++
+        if (errors.length < 25) errors.push(`${model}/${row.id}: ${e.message.split('\n').pop().slice(0, 120)}`)
       }
-      return count
     }
+    results[model] = { ok, fail, skip, total: (rows || []).length }
+  }
 
-    // Import in order
-    results.organizations   = await upsertMany('organization', organizations)
-    results.users           = await upsertMany('user', users)
-    results.wards           = await upsertMany('ward', wards)
-    results.patients        = await upsertMany('patient', patients)
-    results.pharmacyDrugs   = await upsertMany('pharmacyDrug', pharmacyDrugs)
-    results.appointments    = await upsertMany('appointment', appointments)
-    results.preTriages      = await upsertMany('preTriage', preTriages)
-    results.queueItems      = await upsertMany('queueManagement', queueItems)
-    results.consultations   = await upsertMany('consultation', consultations)
-    results.prescriptions   = await upsertMany('prescription', prescriptions)
-    results.labOrders       = await upsertMany('labOrder', labOrders)
-    results.labResults      = await upsertMany('labResult', labResults)
-    results.radiologyOrders = await upsertMany('radiologyOrder', radiologyOrders)
-    results.radiologyReports = await upsertMany('radiologyReport', radiologyReports)
-    results.admissions      = await upsertMany('admission', admissions)
-    results.invoices        = await upsertMany('invoice', invoices)
-    results.payments        = await upsertMany('payment', payments)
-    results.pharmacySales   = await upsertMany('pharmacySale', pharmacySales)
-    results.deathCertificates = await upsertMany('deathCertificate', deathCertificates)
+  async function ids(model) {
+    const rows = await db[model].findMany({ select: { id: true } })
+    return new Set(rows.map(r => r.id))
+  }
 
-    // Re-enable FK checks
-    await db.$executeRawUnsafe(`SET session_replication_role = 'origin'`)
-
-    return res.json({
-      success: true,
-      imported: results,
-      errors: errors.slice(0, 20),
-      message: 'Import complete!'
+  try {
+    // Stage 1 — core
+    await copy('organization', b.organizations)
+    await copy('department', b.departments, r => { r.headId = null; return r })
+    const deptIds = await ids('department')
+    await copy('user', b.users, r => {
+      if (r.departmentId && !deptIds.has(r.departmentId)) r.departmentId = null
+      r.invitedById = null
+      return r
     })
+    await copy('patient', b.patients)
+    const patientIds = await ids('patient')
+
+    // Stage 2 — inpatient
+    await copy('ward', b.wards, r => {
+      if (r.departmentId && !deptIds.has(r.departmentId)) r.departmentId = null
+      return r
+    })
+    const wardIds = await ids('ward')
+    await copy('bed', b.beds, r => {
+      if (!wardIds.has(r.wardId)) return null
+      if (r.currentPatientId && !patientIds.has(r.currentPatientId)) r.currentPatientId = null
+      return r
+    })
+    const bedIds = await ids('bed')
+    await copy('admission', b.admissions, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.bedId && !bedIds.has(r.bedId)) r.bedId = null
+      return r
+    })
+
+    // Stage 3 — clinical
+    await copy('appointment', b.appointments, r => patientIds.has(r.patientId) ? r : null)
+    const apptIds = await ids('appointment')
+    await copy('consultation', b.consultations, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.appointmentId && !apptIds.has(r.appointmentId)) r.appointmentId = null
+      return r
+    })
+    const consultIds = await ids('consultation')
+    await copy('preTriage', b.preTriages, r => {
+      if (r.patientId && !patientIds.has(r.patientId)) r.patientId = null
+      return r
+    })
+    await copy('triageAssessment', b.triageAssessments, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.appointmentId && !apptIds.has(r.appointmentId)) r.appointmentId = null
+      return r
+    })
+    await copy('queueManagement', b.queueItems, r => {
+      if (r.patientId && !patientIds.has(r.patientId)) r.patientId = null
+      return r
+    })
+
+    // Stage 4 — pharmacy
+    await copy('pharmacyDrug', b.pharmacyDrugs)
+    await copy('prescription', b.prescriptions, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.consultationId && !consultIds.has(r.consultationId)) r.consultationId = null
+      return r
+    })
+    const prescriptionIds = await ids('prescription')
+    await copy('pharmacySale', b.pharmacySales, r => {
+      if (r.patientId && !patientIds.has(r.patientId)) r.patientId = null
+      if (r.prescriptionId && !prescriptionIds.has(r.prescriptionId)) r.prescriptionId = null
+      return r
+    })
+
+    // Stage 5 — lab & radiology
+    await copy('labOrder', b.labOrders, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.consultationId && !consultIds.has(r.consultationId)) r.consultationId = null
+      return r
+    })
+    const labOrderIds = await ids('labOrder')
+    await copy('labResult', b.labResults, r => labOrderIds.has(r.orderId) ? r : null)
+    await copy('radiologyOrder', b.radiologyOrders, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.consultationId && !consultIds.has(r.consultationId)) r.consultationId = null
+      return r
+    })
+    const radOrderIds = await ids('radiologyOrder')
+    await copy('radiologyReport', b.radiologyReports, r => radOrderIds.has(r.orderId) ? r : null)
+
+    // Stage 6 — billing
+    await copy('invoice', b.invoices, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.consultationId && !consultIds.has(r.consultationId)) r.consultationId = null
+      return r
+    })
+    const invoiceIds = await ids('invoice')
+    await copy('payment', b.payments, r => {
+      if (!invoiceIds.has(r.invoiceId)) return null
+      if (r.patientId && !patientIds.has(r.patientId)) r.patientId = null
+      return r
+    })
+
+    // Stage 7 — records & commissions
+    const userIds = await ids('user')
+    await copy('deathCertificate', b.deathCertificates, r => {
+      if (!patientIds.has(r.patientId)) return null
+      if (r.certifiedById && !userIds.has(r.certifiedById)) r.certifiedById = null
+      if (r.issuedById && !userIds.has(r.issuedById)) r.issuedById = null
+      return r
+    })
+    await copy('doctorCommissionConfig', b.doctorCommissionConfigs, r => userIds.has(r.doctorId) ? r : null)
+    await copy('doctorCommission', b.doctorCommissions, r => {
+      if (!userIds.has(r.doctorId)) return null
+      if (r.invoiceId && !invoiceIds.has(r.invoiceId)) r.invoiceId = null
+      return r
+    })
+
+    return res.json({ success: true, results, errors, message: 'Import complete!' })
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message, partial: results })
+    return res.status(500).json({ success: false, error: err.message, results, errors })
   }
 }
