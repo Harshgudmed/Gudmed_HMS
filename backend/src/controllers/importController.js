@@ -24,8 +24,14 @@ export async function importData(req, res) {
       let count = 0
       for (const rec of (records || [])) {
         try {
-          // Remove auto-managed Prisma fields that cause conflicts
-          const { updatedAt, createdAt, ...rest } = rec
+          // Remove auto-managed fields and optional FK refs that may not exist in production
+          const {
+            updatedAt, createdAt,
+            departmentId, buildingId, floorId, roomId,
+            referredById, supervisorId, reviewedById,
+            createdById, updatedById, cancelledById, soldById, servedById,
+            ...rest
+          } = rec
           const data = { ...rest }
 
           await db[model].upsert({
