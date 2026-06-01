@@ -43,6 +43,18 @@ export async function create(req, res, next) {
     const count = await db.deathCertificate.count({ where: { organizationId: ORG_ID } })
     const certNumber = `DC-${String(count + 1).padStart(5, '0')}`
 
+    // Defensive: only link a certifier if that user actually exists in this org.
+    // Prevents FK constraint errors when the selected doctor isn't present
+    // (e.g. data migrated without the user records). certifiedById is optional.
+    let safeCertifiedById = null
+    if (certifiedById) {
+      const certifier = await db.user.findFirst({
+        where: { id: certifiedById, organizationId: ORG_ID },
+        select: { id: true },
+      })
+      safeCertifiedById = certifier ? certifiedById : null
+    }
+
     const cert = await db.deathCertificate.create({
       data: {
         organizationId: ORG_ID,
@@ -69,7 +81,7 @@ export async function create(req, res, next) {
         autopsyFindings: autopsyFindings || null,
         isMaternalDeath: isMaternalDeath || false,
         pregnancyRelated: pregnancyRelated || null,
-        certifiedById,
+        certifiedById: safeCertifiedById,
         certifierQualification: certifierQualification || null,
         licenseNumber: licenseNumber || null,
         certificationDate: new Date(),
