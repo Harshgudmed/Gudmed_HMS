@@ -1,0 +1,322 @@
+import { db } from '../config/db.js'
+import { z } from 'zod'
+
+async function resolveRequestedById(organizationId) {
+  const fromEnv = process.env.DEFAULT_REQUESTED_BY_ID
+  if (fromEnv) {
+    const user = await db.user.findUnique({ where: { id: fromEnv } })
+    if (user) return fromEnv
+  }
+  const orgId = organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+  const admin = await db.user.findFirst({
+    where: { organizationId: orgId, isActive: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (!admin) {
+    throw Object.assign(
+      new Error('No active user found to assign lab orders. Create a user in Settings or set DEFAULT_REQUESTED_BY_ID in .env'),
+      { status: 400 }
+    )
+  }
+  return admin.id
+}
+
+// ── Zod schemas ────────────────────────────────────────────────────────────────
+
+const createTestSchema = z.object({
+  testName: z.string().min(1),
+  testCode: z.string().optional(),
+  testCategory: z.string().optional(),
+  testType: z.string().optional(),
+  specimenType: z.string().optional(),
+  specimenVolume: z.string().optional(),
+  specimenContainer: z.string().optional(),
+  unit: z.string().optional(),
+  referenceRanges: z.string().optional(),
+  price: z.number().optional(),
+  turnaroundTime: z.number().int().optional(),
+  department: z.string().optional(),
+  preparationInstructions: z.string().optional(),
+  clinicalSignificance: z.string().optional(),
+})
+
+const createOrderSchema = z.object({
+  patientId: z.string().min(1),
+  consultationId: z.string().optional(),
+  tests: z.array(z.any()).min(1),
+  clinicalIndication: z.string().optional(),
+  provisionalDiagnosis: z.string().optional(),
+  priority: z.string().optional(),
+  notes: z.string().optional(),
+})
+
+const createResultSchema = z.object({
+  orderId: z.string().min(1),
+  testId: z.string().min(1),
+  resultValue: z.string().optional(),
+  resultUnit: z.string().optional(),
+  isAbnormal: z.boolean().optional(),
+  isCritical: z.boolean().optional(),
+  flag: z.string().optional(),
+  comment: z.string().optional(),
+})
+
+const updateOrderSchema = z.object({
+  id: z.string().min(1),
+}).passthrough()
+
+const updateResultSchema = z.object({
+  id: z.string().min(1),
+}).passthrough()
+
+const updateTestSchema = z.object({
+  id: z.string().min(1),
+}).passthrough()
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function todayRange() {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const end = new Date()
+  end.setHours(23, 59, 59, 999)
+  return { gte: start, lte: end }
+}
+
+// ── Controllers ────────────────────────────────────────────────────────────────
+
+export const getAll = async (req, res, next) => {
+  try {
+    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const { resource, testCategory, status, priority, orderId } = req.query
+
+    if (resource === 'tests') {
+      const where = { organizationId: ORGANIZATION_ID, isActive: true }
+      if (testCategory) where.testCategory = testCategory
+
+      const data = await db.labTest.findMany({
+        where,
+        orderBy: [{ testCategory: 'asc' }, { testName: 'asc' }],
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'orders') {
+      const where = { organizationId: ORGANIZATION_ID }
+      if (status) where.status = status
+      if (priority) where.priority = priority
+
+      const data = await db.labOrder.findMany({
+        where,
+        include: {
+          patient: {
+            select: {
+              id: true,
+              mrn: true,
+              firstName: true,
+              lastName: true,
+              gender: true,
+              dateOfBirth: true,
+              phonePrimary: true,
+            },
+          },
+          results: {
+            include: { test: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'results') {
+      const where = {}
+      if (orderId) where.orderId = orderId
+
+      const data = await db.labResult.findMany({
+        where,
+        include: {
+          test: true,
+          order: {
+            include: {
+              patient: {
+                select: {
+                  id: true,
+                  mrn: true,
+                  firstName: true,
+                  lastName: true,
+                  gender: true,
+                  dateOfBirth: true,
+                  phonePrimary: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'stats') {
+      const baseWhere = { organizationId: ORGANIZATION_ID }
+
+      const [pending, sampleCollected, inProgress, completedToday, criticalResults, totalTests] =
+        await Promise.all([
+          db.labOrder.count({ where: { ...baseWhere, status: 'pending' } }),
+          db.labOrder.count({ where: { ...baseWhere, status: 'sample_collected' } }),
+          db.labOrder.count({ where: { ...baseWhere, status: 'in_progress' } }),
+          db.labOrder.count({
+            where: { ...baseWhere, status: 'completed', resultsReportedAt: todayRange() },
+          }),
+          db.labResult.count({ where: { isCritical: true, verifiedAt: null } }),
+          db.labTest.count({ where: { organizationId: ORGANIZATION_ID, isActive: true } }),
+        ])
+
+      return res.json({
+        success: true,
+        data: { pending, sampleCollected, inProgress, completedToday, criticalResults, totalTests },
+      })
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid resource parameter' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const create = async (req, res, next) => {
+  try {
+    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const { resource } = req.body
+
+    if (resource === 'test') {
+      const parsed = createTestSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: 'Validation error', details: parsed.error.issues })
+      }
+
+      const data = await db.labTest.create({
+        data: {
+          ...parsed.data,
+          organizationId: ORGANIZATION_ID,
+          isActive: true,
+        },
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'order') {
+      const parsed = createOrderSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: 'Validation error', details: parsed.error.issues })
+      }
+
+      const { patientId, consultationId, tests, clinicalIndication, provisionalDiagnosis, priority, notes } =
+        parsed.data
+
+      const orderNumber = `LAB${Date.now()}`
+      const requestedById = await resolveRequestedById(ORGANIZATION_ID)
+
+      const data = await db.labOrder.create({
+        data: {
+          orderNumber,
+          organizationId: ORGANIZATION_ID,
+          patientId,
+          consultationId: consultationId || null,
+          requestedById,
+          tests: JSON.stringify(tests),
+          clinicalIndication,
+          provisionalDiagnosis,
+          priority,
+          notes,
+          status: 'pending',
+        },
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'result') {
+      const parsed = createResultSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: 'Validation error', details: parsed.error.issues })
+      }
+
+      const { orderId, testId, resultValue, resultUnit, isAbnormal, isCritical, flag, comment } =
+        parsed.data
+
+      const data = await db.labResult.create({
+        data: {
+          orderId,
+          testId,
+          resultValue,
+          resultUnit,
+          isAbnormal,
+          isCritical,
+          flag,
+          comment,
+        },
+      })
+      return res.json({ success: true, data })
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid resource value' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const update = async (req, res, next) => {
+  try {
+    const { resource } = req.body
+
+    if (resource === 'order') {
+      const parsed = updateOrderSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: 'Validation error', details: parsed.error.issues })
+      }
+
+      const { id, resource: _r, ...updates } = parsed.data
+
+      const data = await db.labOrder.update({
+        where: { id },
+        data: { ...updates },
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'result') {
+      const parsed = updateResultSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: 'Validation error', details: parsed.error.issues })
+      }
+
+      const { id, resource: _r, ...updates } = parsed.data
+
+      const data = await db.labResult.update({
+        where: { id },
+        data: { ...updates },
+      })
+      return res.json({ success: true, data })
+    }
+
+    if (resource === 'test') {
+      const parsed = updateTestSchema.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: 'Validation error', details: parsed.error.issues })
+      }
+
+      const { id, resource: _r, ...updates } = parsed.data
+
+      const data = await db.labTest.update({
+        where: { id },
+        data: { ...updates },
+      })
+      return res.json({ success: true, data })
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid resource value' })
+  } catch (err) {
+    next(err)
+  }
+}
