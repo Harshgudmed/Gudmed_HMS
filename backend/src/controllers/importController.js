@@ -48,7 +48,7 @@ export async function importData(req, res) {
           })
           count++
         } catch (e) {
-          errors.push(`${model}/${rec[idField]}: ${e.message.slice(0, 100)}`)
+          errors.push(`${model}/${rec[idField]}: ${e.message.slice(0, 300)}`)
         }
       }
       return count
