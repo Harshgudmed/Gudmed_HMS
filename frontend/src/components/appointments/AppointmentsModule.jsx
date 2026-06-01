@@ -837,7 +837,7 @@ ${apt.chiefComplaint ? `<div style="padding:10px;background:#fffbeb;border:1px s
                 <CardDescription>{getAppointmentsForDate(selectedDate).length} appointments</CardDescription>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[400px] pr-4">
+                <ScrollArea className="h-[calc(100vh-300px)] min-h-[400px] pr-4">
                   {getAppointmentsForDate(selectedDate).length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <CalendarDays className="h-12 w-12 mx-auto mb-2 opacity-50" />
