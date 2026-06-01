@@ -1765,276 +1765,200 @@ export default function PharmacyModule() {
 
       {/* ── ADD/EDIT DRUG DIALOG ── */}
       <Dialog open={showDrugDialog} onOpenChange={setShowDrugDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
+        <DialogContent className="max-w-2xl flex flex-col p-0" style={{ maxHeight: "92vh" }}>
+          {/* Header */}
+          <div className="px-6 pt-5 pb-3 border-b shrink-0">
+            <DialogTitle className="text-lg font-bold">
               {editingDrugId ? "Edit Drug" : "Add New Drug"}
             </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-3">
-                <Label>Drug Name *</Label>
-                <Input
-                  value={drugForm.name}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, name: e.target.value }))
-                  }
-                  placeholder="e.g. Paracetamol 500mg"
-                />
+            <p className="text-sm text-gray-500 mt-0.5">
+              Fill in drug details, pricing, scheme, and batch information
+            </p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5" style={{ minHeight: 0 }}>
+
+            {/* ── DRUG IDENTITY ── */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-4 bg-blue-500 rounded" />
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Drug Identity</span>
               </div>
-              <div>
-                <Label>Salt / Generic</Label>
-                <Input
-                  value={drugForm.saltName}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, saltName: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Company / Brand</Label>
-                <Input
-                  value={drugForm.companyName}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, companyName: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Barcode</Label>
-                <Input
-                  value={drugForm.barcode}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, barcode: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Category *</Label>
-                <Select
-                  value={drugForm.category}
-                  onValueChange={(v) =>
-                    setDrugForm((p) => ({ ...p, category: v }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DRUG_CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Form *</Label>
-                <Select
-                  value={drugForm.form}
-                  onValueChange={(v) => setDrugForm((p) => ({ ...p, form: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DRUG_FORMS.map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {f}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Strength *</Label>
-                <Input
-                  value={drugForm.strength}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, strength: e.target.value }))
-                  }
-                  placeholder="e.g. 500mg"
-                />
-              </div>
-            </div>
-            {/* Pricing */}
-            <div className="grid grid-cols-4 gap-3">
-              <div>
-                <Label>MRP (₹) *</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={drugForm.mrp}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, mrp: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Purchase Rate (₹)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={drugForm.rate}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, rate: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Discount %</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={drugForm.discountPercentage}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({
-                      ...p,
-                      discountPercentage: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Scheme</Label>
-                <Input
-                  value={drugForm.scheme}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, scheme: e.target.value }))
-                  }
-                  placeholder="e.g. 10+1"
-                />
-              </div>
-            </div>
-            {(mrp > 0 || rate > 0) && (
-              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 grid grid-cols-4 gap-3 text-center text-sm">
-                <div>
-                  <p className="text-xs text-gray-500 font-semibold uppercase">
-                    MRP
-                  </p>
-                  <p className="font-bold text-gray-800">
-                    ₹{Number(mrp).toFixed(2)}
-                  </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <Label className="text-xs font-medium">Medicine Name *</Label>
+                  <Input
+                    className="mt-1"
+                    value={drugForm.name}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. Paracetamol 500mg Tablet"
+                  />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 font-semibold uppercase">
-                    Discount
-                  </p>
-                  <p className="font-bold text-red-600">
-                    –₹{discAmt.toFixed(2)} ({discPct}%)
-                  </p>
+                  <Label className="text-xs font-medium">Salt / Generic Name</Label>
+                  <Input
+                    className="mt-1"
+                    value={drugForm.saltName}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, saltName: e.target.value }))}
+                    placeholder="e.g. Paracetamol"
+                  />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 font-semibold uppercase">
-                    Net Rate
-                  </p>
-                  <p className="font-bold text-green-700">
-                    ₹{netRate.toFixed(2)}
-                  </p>
+                  <Label className="text-xs font-medium">Company / Manufacturer</Label>
+                  <Input
+                    className="mt-1"
+                    value={drugForm.companyName}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, companyName: e.target.value }))}
+                    placeholder="e.g. Sun Pharma"
+                  />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 font-semibold uppercase">
-                    Margin
-                  </p>
-                  <p className="font-bold text-blue-700">{margin}%</p>
+                  <Label className="text-xs font-medium">Category *</Label>
+                  <Select value={drugForm.category} onValueChange={(v) => setDrugForm((p) => ({ ...p, category: v }))}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectContent>
+                      {DRUG_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-            )}
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Min Stock</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={drugForm.minStock}
-                  onChange={(e) =>
-                    setDrugForm((p) => ({ ...p, minStock: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Schedule</Label>
-                <Select
-                  value={drugForm.scheduleType}
-                  onValueChange={(v) =>
-                    setDrugForm((p) => ({ ...p, scheduleType: v }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SCHEDULE_TYPES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s === "none" ? "None (OTC)" : `Sch-${s}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div>
+                  <Label className="text-xs font-medium">Form *</Label>
+                  <Select value={drugForm.form} onValueChange={(v) => setDrugForm((p) => ({ ...p, form: v }))}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select form" /></SelectTrigger>
+                    <SelectContent>
+                      {DRUG_FORMS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs font-medium">Strength *</Label>
+                  <Input
+                    className="mt-1"
+                    value={drugForm.strength}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, strength: e.target.value }))}
+                    placeholder="e.g. 500mg, 10mg/5ml"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs font-medium">Barcode</Label>
+                  <Input
+                    className="mt-1"
+                    value={drugForm.barcode}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, barcode: e.target.value }))}
+                    placeholder="Optional"
+                  />
+                </div>
               </div>
             </div>
+
+            {/* ── PRICING & SCHEME ── */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-4 bg-green-500 rounded" />
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Pricing &amp; Scheme</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-medium">MRP (₹) *</Label>
+                  <Input className="mt-1" type="number" min={0} step="0.01" placeholder="0"
+                    value={drugForm.mrp}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, mrp: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Purchase Rate (₹) *</Label>
+                  <Input className="mt-1" type="number" min={0} step="0.01" placeholder="0"
+                    value={drugForm.rate}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, rate: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Discount %</Label>
+                  <Input className="mt-1" type="number" min={0} max={100} placeholder="0"
+                    value={drugForm.discountPercentage}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, discountPercentage: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Scheme</Label>
+                  <Input className="mt-1" placeholder="e.g. 10+1, 5+1 Free"
+                    value={drugForm.scheme}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, scheme: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Min Stock</Label>
+                  <Input className="mt-1" type="number" min={0} placeholder="0"
+                    value={drugForm.minStock}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, minStock: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Schedule</Label>
+                  <Select value={drugForm.scheduleType} onValueChange={(v) => setDrugForm((p) => ({ ...p, scheduleType: v }))}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {SCHEDULE_TYPES.map((s) => <SelectItem key={s} value={s}>{s === "none" ? "None (OTC)" : `Sch-${s}`}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {(mrp > 0 || rate > 0) && (
+                <div className="mt-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 grid grid-cols-4 gap-3 text-center text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase">MRP</p>
+                    <p className="font-bold text-gray-800">₹{Number(mrp).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Discount</p>
+                    <p className="font-bold text-red-600">–₹{discAmt.toFixed(2)} ({discPct}%)</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Net Rate</p>
+                    <p className="font-bold text-green-700">₹{netRate.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Margin</p>
+                    <p className="font-bold text-blue-700">{margin}%</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── BATCH INFORMATION ── */}
             {!editingDrugId && (
-              <div className="border rounded-lg p-3 space-y-3 bg-gray-50">
-                <p className="text-sm font-medium">Initial Batch (optional)</p>
-                <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-4 bg-orange-500 rounded" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Batch Information</span>
+                  <span className="text-[11px] text-gray-400 normal-case font-normal">(Optional — adds opening stock)</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label>Batch #</Label>
-                    <Input
+                    <Label className="text-xs font-medium">Batch Number</Label>
+                    <Input className="mt-1" placeholder="e.g. BN2024001"
                       value={drugForm.batchNumber}
-                      onChange={(e) =>
-                        setDrugForm((p) => ({
-                          ...p,
-                          batchNumber: e.target.value,
-                        }))
-                      }
-                    />
+                      onChange={(e) => setDrugForm((p) => ({ ...p, batchNumber: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Expiry Date</Label>
-                    <Input
-                      type="date"
-                      value={drugForm.expiryDate}
-                      onChange={(e) =>
-                        setDrugForm((p) => ({
-                          ...p,
-                          expiryDate: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label>Qty</Label>
-                    <Input
-                      type="number"
-                      min={0}
+                    <Label className="text-xs font-medium">Opening Quantity</Label>
+                    <Input className="mt-1" type="number" min={0} placeholder="0"
                       value={drugForm.initialQty}
-                      onChange={(e) =>
-                        setDrugForm((p) => ({
-                          ...p,
-                          initialQty: e.target.value,
-                        }))
-                      }
-                    />
+                      onChange={(e) => setDrugForm((p) => ({ ...p, initialQty: e.target.value }))} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs font-medium">Expiry Date</Label>
+                    <Input className="mt-1" type="date"
+                      value={drugForm.expiryDate}
+                      onChange={(e) => setDrugForm((p) => ({ ...p, expiryDate: e.target.value }))} />
                   </div>
                 </div>
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDrugDialog(false)}>
-              Cancel
-            </Button>
+
+          {/* Footer */}
+          <div className="px-6 py-3 border-t shrink-0 flex justify-end gap-2 bg-gray-50">
+            <Button variant="outline" onClick={() => setShowDrugDialog(false)}>Cancel</Button>
             <Button onClick={handleSaveDrug} disabled={savingDrug}>
               {savingDrug ? "Saving..." : editingDrugId ? "Update" : "Add Drug"}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 

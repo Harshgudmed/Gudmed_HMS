@@ -20,6 +20,7 @@ async function grab(model) {
 async function main() {
   console.log('Reading local data…')
   const payload = {
+    purgeDemo: true,  // clear old appt-demo-/inv-demo-/drug-demo- rows first
     organizations:          await grab('organization'),
     departments:            await grab('department'),
     users:                  await grab('user'),

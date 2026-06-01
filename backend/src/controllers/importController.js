@@ -43,6 +43,20 @@ export async function importData(req, res) {
   }
 
   try {
+    // Optional purge of previously-seeded demo rows (by id prefix) so
+    // re-uploading gives a clean slate instead of accumulating orphans.
+    if (b.purgeDemo) {
+      const del = async (model, prefix) => {
+        try { const r = await db[model].deleteMany({ where: { id: { startsWith: prefix } } }); return r.count }
+        catch { return 0 }
+      }
+      results._purged = {
+        appointments: await del('appointment', 'appt-demo-'),
+        invoices:     await del('invoice', 'inv-demo-'),
+        pharmacyDrugs:await del('pharmacyDrug', 'drug-demo-'),
+      }
+    }
+
     // Stage 1 — core
     await copy('organization', b.organizations)
     await copy('department', b.departments, r => { r.headId = null; return r })

@@ -2238,11 +2238,16 @@ tbody tr:hover{background:#f9fafb}
                       ) : tests.filter(t => t.isActive).length === 0 ? (
                         <p className="text-center text-gray-500 py-4">No tests available. Add tests to the catalog first.</p>
                       ) : (
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                           {tests.filter(t => t.isActive).map(test => (
-                            <div key={test.id} className="flex items-center space-x-2">
+                            <label
+                              key={test.id}
+                              htmlFor={test.id}
+                              className="flex items-center gap-2 min-w-0 cursor-pointer rounded-md px-1.5 py-1 hover:bg-gray-50"
+                            >
                               <Checkbox
                                 id={test.id}
+                                className="shrink-0"
                                 checked={field.value?.includes(test.id)}
                                 onCheckedChange={(checked) => {
                                   if (checked) {
@@ -2252,13 +2257,11 @@ tbody tr:hover{background:#f9fafb}
                                   }
                                 }}
                               />
-                              <label htmlFor={test.id} className="text-sm cursor-pointer flex items-center gap-2">
-                                <Badge className={getCategoryBadgeColor(test.testCategory)} variant="outline">
-                                  {test.testCode}
-                                </Badge>
-                                <span className="truncate">{test.testName}</span>
-                              </label>
-                            </div>
+                              <Badge className={`${getCategoryBadgeColor(test.testCategory)} shrink-0`} variant="outline">
+                                {test.testCode}
+                              </Badge>
+                              <span className="text-sm truncate" title={test.testName}>{test.testName}</span>
+                            </label>
                           ))}
                         </div>
                       )}

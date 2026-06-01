@@ -138,10 +138,8 @@ export default function DashboardModule() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-gray-500">
-            {format(new Date(), 'EEEE, dd MMMM yyyy')} · {orgInfo.name}
-          </p>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-sm text-gray-500">{format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
         </div>
         <Button onClick={() => setShowNewPatient(true)}>
           <UserPlus className="mr-2 h-4 w-4" />

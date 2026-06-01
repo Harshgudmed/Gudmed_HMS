@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import client from '@/api/client'
+import { HOSPITAL_NAME } from '@/lib/brand'
+import Logo from '@/components/Logo'
 
 function isLightColor(hex) {
   const h = (hex || '#ffffff').replace('#', '')
@@ -98,11 +100,17 @@ export default function App() {
         className="fixed top-0 left-0 h-full w-56 border-r shadow-sm z-20 flex flex-col overflow-y-auto transition-colors duration-300"
         style={{ backgroundColor: navbarColor }}
       >
-        <div className={`px-4 py-5 border-b ${colored && !light ? 'border-white/20' : 'border-gray-200'}`}>
-          <span className={`text-base font-bold ${colored && !light ? 'text-white' : 'text-blue-600'}`}>
-            {hospitalName}
+        <NavLink
+          to="/"
+          end
+          title={HOSPITAL_NAME}
+          className={`flex items-center gap-3 px-4 py-4 border-b transition-colors hover:opacity-90 ${colored && !light ? 'border-white/20' : 'border-gray-200'}`}
+        >
+          <Logo size={44} />
+          <span className={`text-sm font-bold leading-tight ${colored && !light ? 'text-white' : 'text-blue-700'}`}>
+            {HOSPITAL_NAME}
           </span>
-        </div>
+        </NavLink>
         <nav className="flex-1 py-4 space-y-1 px-2">
           {NAV_ITEMS.map(({ to, label }) => (
             <NavLink

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format, differenceInDays } from 'date-fns'
 import { getOrgSettings } from '@/lib/orgSettings'
 import { toast } from 'sonner'
@@ -76,6 +77,7 @@ const emptyCharge = { name:'', type:'Other', amount:'', quantity:1 }
 const emptyAddBed = { wardId:'', bedNumber:'', type:'Standard' }
 
 export default function InpatientModule() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [doctors, setDoctors] = useState([])
   const [wards, setWards] = useState([])
@@ -846,16 +848,58 @@ ${chargesRows}
                       {beds.length === 0 ? (
                         <p className="text-xs text-gray-400 py-2">No beds configured for this ward</p>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-3">
                           {beds.map(bed => {
-                            const bgColor = bed.status === 'occupied' ? 'bg-red-500' : bed.status === 'maintenance' ? 'bg-yellow-500' : bed.status === 'reserved' ? 'bg-blue-500' : 'bg-green-500'
                             const admission = admissions.find(a => a.bedId === bed.id && a.status === 'admitted')
+                            const patientName = admission ? `${admission.patient?.firstName || ''} ${admission.patient?.lastName || ''}`.trim() : ''
+                            const styles = {
+                              occupied:    { bed: 'border-red-400 bg-red-50',    sheet: 'bg-red-500',    text: 'text-red-700' },
+                              maintenance: { bed: 'border-yellow-400 bg-yellow-50', sheet: 'bg-yellow-500', text: 'text-yellow-700' },
+                              reserved:    { bed: 'border-blue-400 bg-blue-50',  sheet: 'bg-blue-500',   text: 'text-blue-700' },
+                              available:   { bed: 'border-green-400 bg-green-50', sheet: 'bg-green-500',  text: 'text-green-700' },
+                            }[bed.status] || { bed: 'border-green-400 bg-green-50', sheet: 'bg-green-500', text: 'text-green-700' }
+                            const isAvailable = bed.status === 'available'
+
                             return (
-                              <div key={bed.id}
-                                title={`Bed ${bed.bedNumber} · ${bed.status}${admission ? ` · ${admission.patient?.firstName} ${admission.patient?.lastName}` : ''}`}
-                                className={`${bgColor} text-white text-xs font-bold rounded flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity`}
-                                style={{ width: 40, height: 40 }}>
-                                {bed.bedNumber}
+                              <div key={bed.id} className="relative group">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isAvailable) {
+                                      navigate(`/patients?register=1&bedId=${bed.id}&wardId=${w.id}`)
+                                    }
+                                  }}
+                                  className={`relative w-[68px] rounded-lg border-2 ${styles.bed} p-1.5 flex flex-col items-center transition-all ${isAvailable ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5' : 'cursor-default'}`}
+                                >
+                                  {/* pillow */}
+                                  <div className={`h-1.5 w-7 rounded-full ${styles.sheet} mb-1`} />
+                                  {/* bed icon */}
+                                  <BedDouble className={`h-6 w-6 ${styles.text}`} />
+                                  {/* bed number */}
+                                  <span className={`mt-0.5 text-[11px] font-bold ${styles.text} leading-none text-center break-all`}>
+                                    {bed.bedNumber}
+                                  </span>
+                                </button>
+
+                                {/* Hover tooltip */}
+                                <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden -translate-x-1/2 group-hover:block">
+                                  <div className="whitespace-nowrap rounded-md bg-gray-900 px-3 py-2 text-xs text-white shadow-lg">
+                                    <div className="font-semibold">Bed {bed.bedNumber}</div>
+                                    {bed.status === 'occupied' ? (
+                                      <div className="mt-0.5 text-gray-200">
+                                        👤 {patientName || 'Occupied'}
+                                        {admission?.admissionDate && (
+                                          <div className="text-gray-400">Since {format(new Date(admission.admissionDate), 'dd MMM')}</div>
+                                        )}
+                                      </div>
+                                    ) : bed.status === 'available' ? (
+                                      <div className="mt-0.5 text-green-300">Available · click to register patient</div>
+                                    ) : (
+                                      <div className="mt-0.5 text-gray-300 capitalize">{bed.status}</div>
+                                    )}
+                                    <div className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 bg-gray-900" />
+                                  </div>
+                                </div>
                               </div>
                             )
                           })}

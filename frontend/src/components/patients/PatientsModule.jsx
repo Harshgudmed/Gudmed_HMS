@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { getOrgSettings } from '@/lib/orgSettings'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
@@ -225,6 +226,16 @@ export default function PatientsModule() {
   const limit = 20
 
   const [showRegDialog, setShowRegDialog] = useState(false)
+  const location = useLocation()
+
+  // Auto-open the registration dialog when navigated here from a bed click
+  // (e.g. /patients?register=1). Works via query param or history state.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('register') === '1' || location.state?.openNew) {
+      setShowRegDialog(true)
+    }
+  }, [location.search, location.state])
   const [showViewDialog, setShowViewDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [selectedPatient, setSelectedPatient] = useState(null)
