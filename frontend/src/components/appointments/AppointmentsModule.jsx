@@ -144,7 +144,7 @@ export default function AppointmentsModule() {
     setError(null)
     const [patientsResult, appointmentsResult, usersResult] = await Promise.allSettled([
       client.get('/patients?status=active&limit=500'),
-      client.get('/appointments'),
+      client.get('/appointments?limit=5000'),
       client.get('/settings?resource=users'),
     ])
     if (patientsResult.status === 'fulfilled') setPatients(patientsResult.value?.data ?? [])
