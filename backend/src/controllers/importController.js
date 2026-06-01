@@ -24,14 +24,18 @@ export async function importData(req, res) {
       let count = 0
       for (const rec of (records || [])) {
         try {
+          // Remove auto-managed Prisma fields that cause conflicts
+          const { updatedAt, createdAt, ...rest } = rec
+          const data = { ...rest }
+
           await db[model].upsert({
-            where: { [idField]: rec[idField] },
-            update: rec,
-            create: rec,
+            where:  { [idField]: rec[idField] },
+            update: data,
+            create: data,
           })
           count++
         } catch (e) {
-          errors.push(`${model}/${rec[idField]}: ${e.message.slice(0, 80)}`)
+          errors.push(`${model}/${rec[idField]}: ${e.message.slice(0, 100)}`)
         }
       }
       return count
