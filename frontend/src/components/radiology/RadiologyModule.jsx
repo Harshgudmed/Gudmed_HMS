@@ -644,11 +644,11 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
       <div className="border-b mb-4">
         <div className="flex">
           {[
+            { value: 'dashboard', label: 'Dashboard' },
             { value: 'worklist', label: 'Worklist' },
             { value: 'orders', label: 'Orders' },
             { value: 'exams', label: 'Exam Catalog' },
             { value: 'reports', label: 'Reports' },
-            { value: 'dashboard', label: 'Dashboard' },
           ].map(tab => (
             <button key={tab.value} onClick={() => setActiveTab(tab.value)}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.value ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
