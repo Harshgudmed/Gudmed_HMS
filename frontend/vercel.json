@@ -1,6 +1,3 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/" }],
-  "env": {
-    "VITE_API_URL": "https://gudmed-api.onrender.com/api"
-  }
+  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
 }
