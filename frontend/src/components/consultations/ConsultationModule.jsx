@@ -26,6 +26,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import client from '@/api/client'
+import PatientLookup from '@/components/common/PatientLookup'
 
 const ICD10_CODES = [
   { code: 'J00',  description: 'Common cold' },
@@ -724,31 +725,15 @@ export default function ConsultationModule() {
             <DialogTitle>Select Patient</DialogTitle>
             <DialogDescription>Search and select a patient</DialogDescription>
           </DialogHeader>
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input className="pl-9" placeholder="Search by name or UHID..." value={patientSearch} onChange={e => setPatientSearch(e.target.value)} />
-          </div>
-          <ScrollArea className="h-64">
-            {filteredPatients.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <User className="h-10 w-10 mx-auto mb-2 opacity-40" />
-                <p>No patients found</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredPatients.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors" onClick={() => { setSelectedPatientId(p.id); setShowPatientDialog(false) }}>
-                    <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-sm font-bold">{initials(getFullName(p))}</div>
-                    <div>
-                      <p className="font-medium">{getFullName(p)}</p>
-                      <p className="text-xs text-gray-400">UHID: {p.mrn} &bull; {p.gender} &bull; {getAge(p.dateOfBirth)} yrs</p>
-                    </div>
-                    <ChevronRight className="ml-auto h-4 w-4 text-gray-300" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+          <PatientLookup
+            showHint={false}
+            selectedPatient={null}
+            onSelect={(p) => {
+              setPatients(prev => prev.some(x => x.id === p.id) ? prev : [p, ...prev])
+              setSelectedPatientId(p.id)
+              setShowPatientDialog(false)
+            }}
+          />
         </DialogContent>
       </Dialog>
 

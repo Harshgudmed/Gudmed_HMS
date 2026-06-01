@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
@@ -32,6 +33,13 @@ const INDIAN_STATES = [
 ]
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+
+const INSURANCE_PROVIDERS = [
+  'CGHS', 'ESIC', 'PM-JAY (Ayushman Bharat)', 'Star Health', 'HDFC ERGO',
+  'Niva Bupa', 'Care Health', 'ICICI Lombard', 'Bajaj Allianz', 'LIC Health',
+  'United India', 'New India Assurance', 'Oriental Insurance', 'National Insurance',
+  'Max Bupa', 'Reliance Health', 'SBI Health', 'Tata AIG',
+]
 
 const patientSchema = z.object({
   firstName: z.string().min(2, 'First name is required'),
@@ -68,6 +76,7 @@ const initials = (name) => name.split(' ').map(n => n[0]).join('').toUpperCase()
 
 // Defined OUTSIDE PatientsModule so React never recreates the component type on re-render
 function PatientForm({ form, isSubmitting, onSubmitFn, submitLabel }) {
+  const [otherProvider, setOtherProvider] = useState(false)
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmitFn)} className="space-y-4">
@@ -176,32 +185,74 @@ function PatientForm({ form, isSubmitting, onSubmitFn, submitLabel }) {
         </div>
 
         {/* Insurance */}
-        <div className="grid grid-cols-3 gap-3">
-          <FormField control={form.control} name="insuranceProvider" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Insurance Provider</FormLabel>
-              <FormControl><Input placeholder="e.g. Star Health" {...field} /></FormControl>
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="insuranceId" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Insurance ID</FormLabel>
-              <FormControl><Input {...field} /></FormControl>
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="hasInsurance" render={({ field }) => (
-            <FormItem className="flex flex-col justify-end">
-              <FormLabel>Has Insurance</FormLabel>
-              <Select onValueChange={(v) => field.onChange(v === 'true')} value={String(field.value)}>
-                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="true">Yes</SelectItem>
-                  <SelectItem value="false">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormItem>
-          )} />
-        </div>
+        {(() => {
+          const hasIns = form.watch('hasInsurance')
+          const provider = form.watch('insuranceProvider') || ''
+          const inList = INSURANCE_PROVIDERS.includes(provider)
+          const isOther = otherProvider || (!!provider && !inList)
+          return (
+            <div className="rounded-lg border p-3 space-y-3 bg-gray-50/50">
+              {/* Step 1: ask if patient has insurance */}
+              <FormField control={form.control} name="hasInsurance" render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={(checked) => {
+                        field.onChange(!!checked)
+                        if (!checked) {
+                          form.setValue('insuranceProvider', '')
+                          form.setValue('insuranceId', '')
+                          setOtherProvider(false)
+                        }
+                      }}
+                    />
+                  </FormControl>
+                  <FormLabel className="cursor-pointer font-medium">Patient has health insurance</FormLabel>
+                </FormItem>
+              )} />
+
+              {/* Step 2: only if insured, show provider + ID */}
+              {hasIns && (
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <FormItem>
+                    <FormLabel>Insurance Provider *</FormLabel>
+                    <Select
+                      value={isOther ? 'Other' : provider}
+                      onValueChange={(v) => {
+                        if (v === 'Other') { setOtherProvider(true); form.setValue('insuranceProvider', '') }
+                        else { setOtherProvider(false); form.setValue('insuranceProvider', v) }
+                      }}
+                    >
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select provider" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {INSURANCE_PROVIDERS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                        <SelectItem value="Other">Other (type below)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+
+                  <FormField control={form.control} name="insuranceId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Insurance ID / Policy No. *</FormLabel>
+                      <FormControl><Input placeholder="e.g. POL123456789" {...field} /></FormControl>
+                    </FormItem>
+                  )} />
+
+                  {/* Step 3: if "Other", let them type the provider name */}
+                  {isOther && (
+                    <FormField control={form.control} name="insuranceProvider" render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>Provider Name (Other) *</FormLabel>
+                        <FormControl><Input placeholder="Type insurance company name" {...field} /></FormControl>
+                      </FormItem>
+                    )} />
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         <DialogFooter>
           <Button type="submit" disabled={isSubmitting}>

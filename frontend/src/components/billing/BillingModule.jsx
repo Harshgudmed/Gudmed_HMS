@@ -3,6 +3,7 @@ import { getOrgSettings } from '@/lib/orgSettings'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import client from '@/api/client'
+import PatientLookup from '@/components/common/PatientLookup'
 import { Receipt, RefreshCw, Plus, Search, Trash2, Shield, Eye, Printer, Download, TrendingUp, Clock, DollarSign, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -748,33 +749,11 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
               <Card>
                 <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Patient</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="relative" ref={dropRef}>
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      className="pl-9"
-                      placeholder="Search by name, phone or UHID..."
-                      value={patientSearch}
-                      onChange={e => { setPatientSearch(e.target.value); setPatientDropdown(true) }}
-                      onFocus={() => { if (patientSearch.length >= 2) setPatientDropdown(true) }}
-                      autoComplete="off"
-                    />
-                    {patientDropdown && patientSearch.length >= 2 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                        {patSearchLoading ? (
-                          <div className="p-3 text-sm text-gray-500">Searching...</div>
-                        ) : patientResults.length === 0 ? (
-                          <div className="p-4 text-sm text-gray-400 text-center">No patients found</div>
-                        ) : patientResults.map(p => (
-                          <div key={p.id}
-                            onMouseDown={e => { e.preventDefault(); selectPatient(p) }}
-                            className="px-4 py-2.5 cursor-pointer hover:bg-blue-50 border-b border-gray-100 last:border-0">
-                            <div className="font-medium text-sm">{p.firstName} {p.lastName} <span className="text-gray-400 text-xs font-normal">· {p.mrn}</span></div>
-                            <div className="text-xs text-gray-500 mt-0.5">{p.phonePrimary} · Age {calcAge(p.dateOfBirth)} · {p.gender}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <PatientLookup
+                    showHint={false}
+                    selectedPatient={null}
+                    onSelect={selectPatient}
+                  />
                   {form.patientName && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
                       <span className="font-medium">{form.patientName}</span>

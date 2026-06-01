@@ -23,6 +23,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import client from '@/api/client'
+import PatientLookup from '@/components/common/PatientLookup'
 
 const URGENCY_LEVELS = {
   red:    { label: 'Emergency',  description: 'Immediate - Life threatening', color: 'bg-red-500',    textColor: 'text-white', waitTime: '< 5 min' },
@@ -483,25 +484,15 @@ export default function TriageModule() {
               <FormField control={form.control} name="patientId" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Patient *</FormLabel>
-                  <div className="space-y-2">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input placeholder="Search by name or UHID..." className="pl-10"
-                        value={patientSearch} onChange={(e) => setPatientSearch(e.target.value)} />
-                    </div>
-                    <ScrollArea className="h-40 border rounded-lg">
-                      {filteredPatients.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">No patients found</div>
-                      ) : filteredPatients.map((patient) => (
-                        <div key={patient.id}
-                          className={`p-3 cursor-pointer hover:bg-gray-50 ${field.value === patient.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`}
-                          onClick={() => { field.onChange(patient.id); setSelectedPatient(patient); setPatientSearch('') }}>
-                          <p className="font-medium">{patient.firstName} {patient.lastName}</p>
-                          <p className="text-sm text-gray-500">{patient.mrn} • {calculateAge(patient.dateOfBirth)}y • {patient.gender}</p>
-                        </div>
-                      ))}
-                    </ScrollArea>
-                  </div>
+                  <PatientLookup
+                    showHint={false}
+                    selectedPatient={null}
+                    onSelect={(p) => {
+                      setPatients(prev => prev.some(x => x.id === p.id) ? prev : [p, ...prev])
+                      field.onChange(p.id)
+                      setSelectedPatient(p)
+                    }}
+                  />
                   <FormMessage />
                 </FormItem>
               )} />

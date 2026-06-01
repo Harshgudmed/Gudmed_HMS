@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import PatientLookup from '@/components/common/PatientLookup'
 import client from '@/api/client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1053,10 +1054,13 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
           <div className="space-y-4">
             <div>
               <Label>Patient *</Label>
-              <Select value={orderForm.patientId} onValueChange={v => setOrderForm(p => ({ ...p, patientId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select patient" /></SelectTrigger>
-                <SelectContent>{patients.map(p => <SelectItem key={p.id} value={p.id}>{p.firstName} {p.lastName} ({p.mrn})</SelectItem>)}</SelectContent>
-              </Select>
+              <PatientLookup
+                className="mt-1"
+                showHint={false}
+                selectedPatient={patients.find(p => p.id === orderForm.patientId) || null}
+                onSelect={(p) => { setPatients(prev => prev.some(x => x.id === p.id) ? prev : [p, ...prev]); setOrderForm(f => ({ ...f, patientId: p.id })) }}
+                onClear={() => setOrderForm(f => ({ ...f, patientId: '' }))}
+              />
             </div>
             <div>
               <Label>Exam *</Label>

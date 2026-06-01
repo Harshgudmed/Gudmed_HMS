@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { Search, User, Calendar, MapPin, Activity, ClipboardList, Shield, Loader2, X } from 'lucide-react'
 import { format } from 'date-fns'
 import client from '@/api/client'
+import PatientLookup from '@/components/common/PatientLookup'
 
 const deathCertificateSchema = z.object({
   patientId: z.string().min(1, 'Patient is required'),
@@ -138,28 +139,11 @@ export default function DeathCertificateForm({ initialData, onSuccess }) {
               <CardDescription>Search for the deceased patient record</CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
-              <div className="relative">
-                <Search className="h-5 w-5 text-gray-400 absolute left-3 top-3" />
-                <Input
-                  placeholder="Search by UHID, First Name, or Last Name..."
-                  className="pl-10 h-12 text-lg"
-                  value={patientSearch}
-                  onChange={e => setPatientSearch(e.target.value)}
-                />
-              </div>
-              {filteredPatients.length > 0 && (
-                <div className="mt-4 border rounded-md divide-y overflow-hidden">
-                  {filteredPatients.map(p => (
-                    <div key={p.id} className="p-4 hover:bg-gray-50 cursor-pointer flex items-center justify-between" onClick={() => handleSelectPatient(p)}>
-                      <div>
-                        <p className="font-semibold">{p.firstName} {p.lastName}</p>
-                        <p className="text-sm text-gray-500">UHID: {p.mrn} • {p.gender} • {format(new Date(p.dateOfBirth), 'MMM dd, yyyy')}</p>
-                      </div>
-                      <Button variant="outline" size="sm">Select</Button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <PatientLookup
+                showHint={false}
+                selectedPatient={null}
+                onSelect={handleSelectPatient}
+              />
             </CardContent>
           </Card>
         ) : (selectedPatient || initialData) && (
