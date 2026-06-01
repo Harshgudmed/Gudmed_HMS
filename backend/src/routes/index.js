@@ -21,10 +21,11 @@ import importRoutes from './importRoutes.js'
 
 export const router = Router()
 
-// Auth routes (no authenticate middleware needed — these issue the token)
-router.use('/auth', authRoutes)
+// Public routes (no auth needed)
+router.use('/auth',   authRoutes)
+router.use('/import', importRoutes)  // data import — protected by x-import-secret header
 
-// Apply authenticate middleware to all routes below — sets req.organizationId from JWT or env fallback
+// Apply authenticate middleware to all routes below
 router.use(authenticate)
 
 router.get('/', (_req, res) => res.json({ message: 'Hospital Management API', version: '1.0.0' }))
@@ -45,4 +46,3 @@ router.use('/death-certificates', deathCertificateRoutes)
 router.use('/doctor-accountability', doctorAccountabilityRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/payments',      paymentRoutes)
-router.use('/import',        importRoutes)
