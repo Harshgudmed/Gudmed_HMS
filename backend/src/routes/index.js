@@ -17,6 +17,7 @@ import { router as deathCertificateRoutes } from './deathCertificateRoutes.js'
 import { router as doctorAccountabilityRoutes } from './doctorAccountabilityRoutes.js'
 import notificationRoutes from './notificationRoutes.js'
 import paymentRoutes from './paymentRoutes.js'
+import importRoutes from './importRoutes.js'
 
 export const router = Router()
 
@@ -44,3 +45,4 @@ router.use('/death-certificates', deathCertificateRoutes)
 router.use('/doctor-accountability', doctorAccountabilityRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/payments',      paymentRoutes)
+router.use('/import',        importRoutes)
