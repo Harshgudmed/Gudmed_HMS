@@ -64,7 +64,7 @@ export default function PrescriptionPurchaseModal({
     async function fetchPrices() {
       setLoadingPrices(true)
       try {
-        const drugsRes = await client.get('/pharmacy/drugs')
+        const drugsRes = await client.get('/pharmacy/drugs?limit=5000')
         const drugs = drugsRes?.data || []
         const enriched = prescriptionItems.map(item => {
           const match = drugs.find(d =>

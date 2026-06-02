@@ -217,7 +217,7 @@ export default function ConsultationModule() {
       client.get('/consultations'),
       client.get('/patients?status=active&limit=500'),
       client.get('/settings?resource=users'),
-      client.get('/pharmacy/drugs'),
+      client.get('/pharmacy/drugs?limit=5000'),
       client.get('/laboratory?resource=tests'),
       client.get('/radiology?resource=exams'),
     ])

@@ -310,10 +310,10 @@ export default function PharmacyModule() {
     setLoading(true);
     try {
       const [dRes, pRes, bRes, poRes] = await Promise.all([
-        client.get("/pharmacy/drugs"),
-        client.get("/pharmacy/prescriptions"),
-        client.get("/pharmacy/batches"),
-        client.get("/pharmacy/purchase-orders"),
+        client.get("/pharmacy/drugs?limit=5000"),
+        client.get("/pharmacy/prescriptions?limit=5000"),
+        client.get("/pharmacy/batches?limit=5000"),
+        client.get("/pharmacy/purchase-orders?limit=5000"),
       ]);
       if (dRes.success) setDrugs(dRes.data || []);
       if (pRes.success) setPrescriptions(pRes.data || []);
