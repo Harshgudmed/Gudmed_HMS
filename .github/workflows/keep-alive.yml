@@ -1,0 +1,33 @@
+name: Keep Backend Awake
+
+# Pings the Render backend on a schedule so the free-tier service never
+# spins down. A sleeping backend takes 30-60s to wake on the first request,
+# which looks broken during a live demo. This keeps it warm 24/7.
+
+on:
+  schedule:
+    # Every 10 minutes (GitHub may delay a few minutes under load).
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API health endpoint
+        run: |
+          echo "Pinging backend at $(date -u)"
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 \
+              -H "Authorization: Bearer keepalive" \
+              https://gudmed-api.onrender.com/api/ || echo "000")
+            echo "Attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Backend is awake."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Backend did not respond 200 after 3 attempts (it may still be waking)."
+          # Do not fail the workflow — a slow wake is not an error.
+          exit 0

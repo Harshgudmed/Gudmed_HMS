@@ -240,8 +240,6 @@ export default function PharmacyModule() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orgInfo, setOrgInfo] = useState({ name: 'Hospital', address: '', city: '', phone: '', email: '' })
   const [drugs, setDrugs] = useState([]);
-  const [drugPage, setDrugPage] = useState(1);
-  const [drugTotal, setDrugTotal] = useState(0);
   const [prescriptions, setPrescriptions] = useState([]);
   const [batches, setBatches] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -312,15 +310,12 @@ export default function PharmacyModule() {
     setLoading(true);
     try {
       const [dRes, pRes, bRes, poRes] = await Promise.all([
-        client.get(`/pharmacy/drugs?page=${drugPage}&limit=20`),
+        client.get("/pharmacy/drugs?limit=5000"),
         client.get("/pharmacy/prescriptions?limit=5000"),
         client.get("/pharmacy/batches?limit=5000"),
         client.get("/pharmacy/purchase-orders?limit=5000"),
       ]);
-      if (dRes.success) {
-        setDrugs(dRes.data || []);
-        if (dRes.pagination) setDrugTotal(dRes.pagination.total || 0);
-      }
+      if (dRes.success) setDrugs(dRes.data || []);
       if (pRes.success) setPrescriptions(pRes.data || []);
       if (bRes.success) setBatches(bRes.data || []);
       if (poRes.success) setPurchaseOrders(poRes.data || []);
@@ -328,7 +323,7 @@ export default function PharmacyModule() {
       /* ignore */
     }
     setLoading(false);
-  }, [drugPage]);
+  }, []);
 
   const fetchSales = useCallback(async () => {
     try {
@@ -1295,30 +1290,6 @@ export default function PharmacyModule() {
                   )}
                 </TableBody>
               </Table>
-              {/* Pagination */}
-              <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-                <div className="text-sm text-gray-600">
-                  Page {drugPage} of {Math.ceil(drugTotal / 20)} ({drugTotal} total medicines)
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={drugPage === 1}
-                    onClick={() => setDrugPage(Math.max(1, drugPage - 1))}
-                  >
-                    ← Previous
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={drugPage >= Math.ceil(drugTotal / 20)}
-                    onClick={() => setDrugPage(drugPage + 1)}
-                  >
-                    Next →
-                  </Button>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
