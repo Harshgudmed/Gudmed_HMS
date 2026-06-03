@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   FlaskConical, Plus, Eye, Edit, Trash2, Calendar, Clock, User, FileText,
   AlertTriangle, CheckCircle, XCircle, Filter, Search, Printer, Send,
-  ChevronDown, ChevronUp, Save, AlertCircle, Activity, TestTube,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Save, AlertCircle, Activity, TestTube,
   X, RefreshCw, Microscope, Beaker, Droplet, ClipboardList, FileBarChart,
   ArrowUpDown, ArrowUp, ArrowDown, Ban, Play, Pause, CheckSquare, Loader2, Receipt
 } from 'lucide-react'
