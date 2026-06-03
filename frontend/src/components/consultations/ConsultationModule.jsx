@@ -575,14 +575,14 @@ export default function ConsultationModule() {
                     )
                   })}
                   {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t">
+                    <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                         disabled={currentPage === 1}
                       >
-                        Previous
+                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
                       </Button>
                       <span className="text-sm text-gray-600">
                         Page {currentPage} of {totalPages}
@@ -593,7 +593,7 @@ export default function ConsultationModule() {
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={currentPage === totalPages}
                       >
-                        Next
+                        Next<ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </div>
                   )}
