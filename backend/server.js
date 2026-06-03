@@ -14,7 +14,9 @@ const PORT = process.env.PORT || 5000
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',          // local dev
   'http://localhost:4173',          // local preview (npm run preview)
-  'https://gudmed.vercel.app',      // production (change to your Vercel URL)
+  'https://gudmed.vercel.app',      // production (old URL)
+  'https://frontend-sigma-gray-63.vercel.app',  // new production frontend
+  'https://frontend-49efa18nl-harsh-rajs-projects-4074e1e0.vercel.app',  // new Vercel deployment
   process.env.FRONTEND_URL,         // set this in Render dashboard → Environment
 ].filter(Boolean)
 
