@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getOrgSettings } from '@/lib/orgSettings'
+import { getOrgSettings, clearOrgCache } from '@/lib/orgSettings'
 
 /**
  * Hook that listens for org settings changes and refetches automatically
@@ -25,9 +25,10 @@ export function useOrgSettings() {
     // Fetch on mount
     fetchSettings()
 
-    // Listen for settings changes
+    // Listen for settings changes - clear cache and refetch
     const handleSettingsChange = () => {
-      fetchSettings()
+      clearOrgCache() // Force clear the cache
+      fetchSettings() // Refetch fresh data
     }
 
     window.addEventListener('brandingChange', handleSettingsChange)

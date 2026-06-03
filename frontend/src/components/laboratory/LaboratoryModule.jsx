@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getOrgSettings } from '@/lib/orgSettings'
+import { useOrgSettings } from '@/lib/useOrgSettings'
 import { sendLabResultNotification } from '@/lib/whatsapp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -410,7 +410,8 @@ export default function LaboratoryModule() {
     fetchStats()
     fetchResults()
   }, [fetchTests, fetchOrders, fetchStats, fetchResults])
-  useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
+  const { orgInfo: hookOrgInfo } = useOrgSettings()
+  useEffect(() => { setOrgInfo(hookOrgInfo) }, [hookOrgInfo])
 
   // Filtered data
   const filteredOrders = orders.filter(order => {

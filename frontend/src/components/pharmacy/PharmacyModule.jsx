@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { getOrgSettings } from '@/lib/orgSettings'
+import { useOrgSettings } from '@/lib/useOrgSettings'
 import { format, addDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -358,7 +358,8 @@ export default function PharmacyModule() {
     fetchAll();
     fetchSales(); // also load sales on mount so dashboard Today's Sales is populated
   }, [fetchAll, fetchSales]);
-  useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
+  const { orgInfo: hookOrgInfo } = useOrgSettings()
+  useEffect(() => { setOrgInfo(hookOrgInfo) }, [hookOrgInfo])
   useEffect(() => {
     if (activeTab === "sales") fetchSales();
   }, [activeTab, fetchSales]);

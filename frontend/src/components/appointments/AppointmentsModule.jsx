@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { getOrgSettings } from '@/lib/orgSettings'
+import { useOrgSettings } from '@/lib/useOrgSettings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -159,7 +159,8 @@ export default function AppointmentsModule() {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
-  useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
+  const { orgInfo: hookOrgInfo } = useOrgSettings()
+  useEffect(() => { setOrgInfo(hookOrgInfo) }, [hookOrgInfo])
   useEffect(() => { setAppointmentsListPage(1) }, [selectedDate, statusFilter, doctorFilter, searchQuery])
 
   // No second fetch on dialog open — patients and users are already loaded on mount

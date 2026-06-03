@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getOrgSettings } from '@/lib/orgSettings'
+import { useOrgSettings } from '@/lib/useOrgSettings'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import client from '@/api/client'
@@ -257,20 +257,21 @@ export default function BillingModule({ onBack }) {
   }, [fetchBills, fetchPayments, fetchServices])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  const { orgInfo: hookOrgInfo } = useOrgSettings()
+
   useEffect(() => {
-    getOrgSettings().then(org => {
-      setOrgInfo(org)
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('gudmed-clinic-profile') : null
-      if (!stored) {
-        setClinic(c => ({
-          ...c,
-          clinicName: org.name || c.clinicName,
-          address: [org.address, org.city].filter(Boolean).join(', ') || c.address,
-          phone: org.phone || c.phone,
-        }))
-      }
-    })
-  }, [])
+    setOrgInfo(hookOrgInfo)
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('gudmed-clinic-profile') : null
+    if (!stored) {
+      setClinic(c => ({
+        ...c,
+        clinicName: hookOrgInfo.name || c.clinicName,
+        address: [hookOrgInfo.address, hookOrgInfo.city].filter(Boolean).join(', ') || c.address,
+        phone: hookOrgInfo.phone || c.phone,
+      }))
+    }
+  }, [hookOrgInfo])
 
   // ── Patient search ─────────────────────────────────────────────────────────
   useEffect(() => {
