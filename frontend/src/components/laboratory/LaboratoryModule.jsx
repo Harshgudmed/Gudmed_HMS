@@ -1459,14 +1459,14 @@ tbody tr:hover{background:#f9fafb}
 
                   {/* Pagination controls for tests */}
                   {filteredTests.length > LAB_ITEMS_PER_PAGE && (
-                    <div className="flex items-center justify-end gap-4">
+                    <div className="flex items-center justify-end gap-4 pt-4 border-t">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setTestsPage(prev => Math.max(1, prev - 1))}
                         disabled={testsPage === 1}
                       >
-                        Previous
+                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
                       </Button>
                       <span className="text-sm text-gray-600">
                         Page {testsPage} of {Math.ceil(filteredTests.length / LAB_ITEMS_PER_PAGE)}
@@ -1477,7 +1477,7 @@ tbody tr:hover{background:#f9fafb}
                         onClick={() => setTestsPage(prev => Math.min(Math.ceil(filteredTests.length / LAB_ITEMS_PER_PAGE), prev + 1))}
                         disabled={testsPage === Math.ceil(filteredTests.length / LAB_ITEMS_PER_PAGE)}
                       >
-                        Next
+                        Next<ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </div>
                   )}
