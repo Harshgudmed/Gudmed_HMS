@@ -263,7 +263,7 @@ export default function QueueModule() {
               {queue.length > QUEUE_ITEMS_PER_PAGE && (() => {
                 const totalPages = Math.ceil(queue.length / QUEUE_ITEMS_PER_PAGE)
                 return (
-                  <div className="flex items-center justify-center gap-2 p-4 border-t">
+                  <div className="flex items-center justify-end gap-2 p-4 border-t">
                     <Button
                       variant="outline"
                       size="sm"
