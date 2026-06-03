@@ -73,6 +73,8 @@ const DURATION_OPTIONS = [
   { value: 60, label: '60 minutes' },
 ]
 
+const APPOINTMENTS_LIST_PER_PAGE = 15
+
 const STATUS_CONFIG = {
   scheduled:   { label: 'Scheduled',   color: 'text-blue-700',   bgColor: 'bg-blue-100',   icon: CalendarDays },
   confirmed:   { label: 'Confirmed',   color: 'text-indigo-700', bgColor: 'bg-indigo-100', icon: CheckCircle },
@@ -132,6 +134,7 @@ export default function AppointmentsModule() {
   const isEditSubmittingRef = useRef(false)
 
   const [selectedAptIds, setSelectedAptIds] = useState(new Set())
+  const [appointmentsListPage, setAppointmentsListPage] = useState(1)
 
   const [patients, setPatients] = useState([])
   const [appointments, setAppointments] = useState([])
@@ -157,6 +160,7 @@ export default function AppointmentsModule() {
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
+  useEffect(() => { setAppointmentsListPage(1) }, [selectedDate, statusFilter, doctorFilter, searchQuery])
 
   // No second fetch on dialog open — patients and users are already loaded on mount
 
@@ -1044,9 +1048,12 @@ ${apt.chiefComplaint ? `<div style="padding:10px;background:#fffbeb;border:1px s
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAppointments
-                      .sort((a, b) => a.appointmentTime.localeCompare(b.appointmentTime))
-                      .map(apt => {
+                    {(() => {
+                      const sorted = filteredAppointments.sort((a, b) => a.appointmentTime.localeCompare(b.appointmentTime))
+                      const startIdx = (appointmentsListPage - 1) * APPOINTMENTS_LIST_PER_PAGE
+                      const endIdx = startIdx + APPOINTMENTS_LIST_PER_PAGE
+                      const paginatedApts = sorted.slice(startIdx, endIdx)
+                      return paginatedApts.map(apt => {
                         const patient = getPatient(apt.patientId)
                         const doctor = apt.doctor
                         const statusInfo = STATUS_CONFIG[apt.status]
@@ -1155,9 +1162,36 @@ ${apt.chiefComplaint ? `<div style="padding:10px;background:#fffbeb;border:1px s
                             </TableCell>
                           </TableRow>
                         )
-                      })}
+                      })
+                    })()}
                   </TableBody>
                 </Table>
+                {filteredAppointments.length > APPOINTMENTS_LIST_PER_PAGE && (() => {
+                  const totalPages = Math.ceil(filteredAppointments.length / APPOINTMENTS_LIST_PER_PAGE)
+                  return (
+                    <div className="flex items-center justify-end gap-2 p-4 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAppointmentsListPage(p => Math.max(1, p - 1))}
+                        disabled={appointmentsListPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                      </Button>
+                      <span className="text-sm text-gray-600">
+                        Page {appointmentsListPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAppointmentsListPage(p => Math.min(totalPages, p + 1))}
+                        disabled={appointmentsListPage === totalPages}
+                      >
+                        Next<ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  )
+                })()}
               </>
               )}
             </CardContent>

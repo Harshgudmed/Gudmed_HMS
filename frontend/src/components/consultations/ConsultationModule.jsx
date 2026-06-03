@@ -12,7 +12,7 @@ import {
   Plus, Save, Printer, FileText, Stethoscope, ClipboardList,
   Pill, AlertCircle, User, Loader2, RefreshCw,
   FlaskConical, Scan, Trash2, ArrowLeft, Eye, Edit, Search,
-  ChevronRight, X
+  ChevronLeft, ChevronRight, X
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
