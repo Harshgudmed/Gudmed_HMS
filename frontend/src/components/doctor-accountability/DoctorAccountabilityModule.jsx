@@ -811,6 +811,7 @@ function SettlementTab() {
 function ReportsTab() {
   const [stats, setStats] = useState([])
   const [loading, setLoading] = useState(true)
+  const [reportsPage, setReportsPage] = useState(1)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -869,35 +870,59 @@ function ReportsTab() {
       ) : stats.length === 0 ? (
         <div className="text-center py-8 text-gray-400">No data yet. Set up commissions and add entries first.</div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Doctor</TableHead><TableHead>Rate</TableHead><TableHead>Total Invoiced</TableHead>
-              <TableHead>Total Commissions</TableHead><TableHead>Pending</TableHead><TableHead>Settled</TableHead><TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {stats.map(s => (
-              <TableRow key={s.doctorId}>
-                <TableCell className="font-medium">{s.doctorName}</TableCell>
-                <TableCell className="text-gray-500">
-                  {s.isActive
-                    ? s.commissionType === 'percentage' ? `${s.commissionRate}%` : fmt(s.commissionRate)
-                    : <span className="text-gray-400 italic">Not configured</span>}
-                </TableCell>
-                <TableCell>{fmt(s.totalInvoiceAmount)}</TableCell>
-                <TableCell>{s.totalCommissions} entries</TableCell>
-                <TableCell><span className="font-semibold text-amber-700">{fmt(s.pendingAmount)}</span><span className="text-xs text-gray-400 ml-1">({s.pendingCount})</span></TableCell>
-                <TableCell><span className="font-semibold text-green-700">{fmt(s.settledAmount)}</span><span className="text-xs text-gray-400 ml-1">({s.settledCount})</span></TableCell>
-                <TableCell>
-                  <Badge variant={s.isActive ? 'default' : 'outline'} className={s.isActive ? '' : 'text-gray-400'}>
-                    {s.isActive ? 'Active' : 'Inactive'}
-                  </Badge>
-                </TableCell>
+        <div className="border rounded-lg">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Doctor</TableHead><TableHead>Rate</TableHead><TableHead>Total Invoiced</TableHead>
+                <TableHead>Total Commissions</TableHead><TableHead>Pending</TableHead><TableHead>Settled</TableHead><TableHead>Status</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(() => {
+                const ITEMS_PER_PAGE = 10
+                const totalPages = Math.ceil(stats.length / ITEMS_PER_PAGE)
+                const startIdx = (reportsPage - 1) * ITEMS_PER_PAGE
+                const endIdx = startIdx + ITEMS_PER_PAGE
+                const paginatedStats = stats.slice(startIdx, endIdx)
+                return paginatedStats.map(s => (
+                  <TableRow key={s.doctorId}>
+                    <TableCell className="font-medium">{s.doctorName}</TableCell>
+                    <TableCell className="text-gray-500">
+                      {s.isActive
+                        ? s.commissionType === 'percentage' ? `${s.commissionRate}%` : fmt(s.commissionRate)
+                        : <span className="text-gray-400 italic">Not configured</span>}
+                    </TableCell>
+                    <TableCell>{fmt(s.totalInvoiceAmount)}</TableCell>
+                    <TableCell>{s.totalCommissions} entries</TableCell>
+                    <TableCell><span className="font-semibold text-amber-700">{fmt(s.pendingAmount)}</span><span className="text-xs text-gray-400 ml-1">({s.pendingCount})</span></TableCell>
+                    <TableCell><span className="font-semibold text-green-700">{fmt(s.settledAmount)}</span><span className="text-xs text-gray-400 ml-1">({s.settledCount})</span></TableCell>
+                    <TableCell>
+                      <Badge variant={s.isActive ? 'default' : 'outline'} className={s.isActive ? '' : 'text-gray-400'}>
+                        {s.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              })()}
+            </TableBody>
+          </Table>
+          {stats.length > 10 && (() => {
+            const ITEMS_PER_PAGE = 10
+            const totalPages = Math.ceil(stats.length / ITEMS_PER_PAGE)
+            return (
+              <div className="flex items-center justify-end gap-2 p-4 border-t bg-gray-50">
+                <Button variant="outline" size="sm" onClick={() => setReportsPage(p => Math.max(1, p - 1))} disabled={reportsPage === 1}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                </Button>
+                <span className="text-sm text-gray-600">Page {reportsPage} of {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setReportsPage(p => Math.min(totalPages, p + 1))} disabled={reportsPage === totalPages}>
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )
+          })()}
+        </div>
       )}
     </div>
   )
