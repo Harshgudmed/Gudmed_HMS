@@ -8,7 +8,7 @@ import { format } from 'date-fns'
 import {
   History, Plus, Search, Thermometer, UserPlus,
   ArrowRight, CheckCircle, Clock, Activity, AlertTriangle,
-  RefreshCw, Loader2, Eye, Pencil, Printer,
+  RefreshCw, Loader2, Eye, Pencil, Printer, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -323,6 +323,8 @@ export default function PreTriageModule() {
   const [error,           setError]           = useState(null)
   const [searchQuery,     setSearchQuery]     = useState('')
   const [activeFilter,    setActiveFilter]    = useState('all')
+  const [currentPage,     setCurrentPage]     = useState(1)
+  const ITEMS_PER_PAGE = 10
   const [showFormDialog,  setShowFormDialog]  = useState(false)
   const [editingScreening, setEditingScreening] = useState(null)
   const [viewScreening,   setViewScreening]   = useState(null)
@@ -368,6 +370,8 @@ export default function PreTriageModule() {
   }
 
   useEffect(() => { fetchScreenings() }, [])
+
+  useEffect(() => { setCurrentPage(1) }, [searchQuery, activeFilter])
 
   const stats = useMemo(() => ({
     total:      screenings.length,
@@ -622,8 +626,12 @@ export default function PreTriageModule() {
                     No screenings found
                   </TableCell>
                 </TableRow>
-              ) : (
-                filteredScreenings.map((s) => (
+              ) : (() => {
+                const totalPages = Math.ceil(filteredScreenings.length / ITEMS_PER_PAGE)
+                const startIdx = (currentPage - 1) * ITEMS_PER_PAGE
+                const endIdx = startIdx + ITEMS_PER_PAGE
+                const paginatedScreenings = filteredScreenings.slice(startIdx, endIdx)
+                return paginatedScreenings.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.screeningNumber}</TableCell>
                     <TableCell>
@@ -696,9 +704,35 @@ export default function PreTriageModule() {
                     </TableCell>
                   </TableRow>
                 ))
-              )}
+              })()}
             </TableBody>
           </Table>
+          {filteredScreenings.length > ITEMS_PER_PAGE && (() => {
+            const totalPages = Math.ceil(filteredScreenings.length / ITEMS_PER_PAGE)
+            return (
+              <div className="flex items-center justify-center gap-2 p-4 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                </Button>
+                <span className="text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )
+          })()}
         </CardContent>
       </Card>
 

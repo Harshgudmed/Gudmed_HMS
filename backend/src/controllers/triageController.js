@@ -22,19 +22,28 @@ export async function getQueue(req, res, next) {
   try {
     const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { serviceArea, status } = req.query
+    const limit = parseInt(req.query.limit || '10')
+    const offset = parseInt(req.query.offset || '0')
     const where = { organizationId: ORG_ID }
     if (serviceArea) where.serviceArea = serviceArea
     if (status) where.status = status
 
-    const queue = await db.queueManagement.findMany({
-      where,
-      orderBy: [{ priority: 'desc' }, { joinedQueueAt: 'asc' }],
-      include: {
-        patient: {
-          select: { id: true, mrn: true, firstName: true, lastName: true, phonePrimary: true, gender: true, dateOfBirth: true },
+    const orderBy = [{ priority: 'desc' }, { joinedQueueAt: 'asc' }]
+
+    const [queue, total] = await Promise.all([
+      db.queueManagement.findMany({
+        where,
+        take: limit,
+        skip: offset,
+        orderBy,
+        include: {
+          patient: {
+            select: { id: true, mrn: true, firstName: true, lastName: true, phonePrimary: true, gender: true, dateOfBirth: true },
+          },
         },
-      },
-    })
+      }),
+      db.queueManagement.count({ where }),
+    ])
 
     const now = new Date()
     const queueWithWaitTime = queue.map(item => ({
@@ -44,7 +53,11 @@ export async function getQueue(req, res, next) {
         : 0,
     }))
 
-    res.json({ success: true, data: queueWithWaitTime })
+    res.json({
+      success: true,
+      data: queueWithWaitTime,
+      meta: { total, limit, offset, hasMore: offset + limit < total },
+    })
   } catch (err) {
     next(err)
   }

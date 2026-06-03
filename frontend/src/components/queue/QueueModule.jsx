@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { RefreshCw, Users, Clock, CheckCircle, Phone } from 'lucide-react'
+import { RefreshCw, Users, Clock, CheckCircle, Phone, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,11 +42,14 @@ function calcWait(createdAt) {
   return `${Math.floor(diff / 60)}h ${diff % 60}m`
 }
 
+const QUEUE_ITEMS_PER_PAGE = 10
+
 export default function QueueModule() {
   const [activeTab, setActiveTab] = useState('queue')
   const [queue, setQueue] = useState([])
   const [loading, setLoading] = useState(false)
   const [updatingId, setUpdatingId] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
 
   const fetchQueue = useCallback(async () => {
     setLoading(true)
@@ -73,6 +76,10 @@ export default function QueueModule() {
   useEffect(() => {
     if (activeTab === 'queue') fetchQueue()
   }, [activeTab, fetchQueue])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [queue])
 
   const handleCall = async (entry) => {
     setUpdatingId(entry.id)
@@ -187,7 +194,12 @@ export default function QueueModule() {
                         <p className="text-xs mt-1">Queue entries from triage will appear here</p>
                       </TableCell>
                     </TableRow>
-                  ) : queue.map((entry, idx) => {
+                  ) : (() => {
+                    const totalPages = Math.ceil(queue.length / QUEUE_ITEMS_PER_PAGE)
+                    const startIdx = (currentPage - 1) * QUEUE_ITEMS_PER_PAGE
+                    const endIdx = startIdx + QUEUE_ITEMS_PER_PAGE
+                    const paginatedQueue = queue.slice(startIdx, endIdx)
+                    return paginatedQueue.map((entry, idx) => {
                     const patientName = entry.patientName
                       || (entry.patient ? `${entry.patient.firstName || ''} ${entry.patient.lastName || ''}`.trim() : '')
                       || '—'
@@ -244,9 +256,36 @@ export default function QueueModule() {
                         </TableCell>
                       </TableRow>
                     )
-                  })}
+                    })
+                  })()}
                 </TableBody>
               </Table>
+              {queue.length > QUEUE_ITEMS_PER_PAGE && (() => {
+                const totalPages = Math.ceil(queue.length / QUEUE_ITEMS_PER_PAGE)
+                return (
+                  <div className="flex items-center justify-center gap-2 p-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next<ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>

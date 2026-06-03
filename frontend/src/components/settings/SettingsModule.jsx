@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Settings, Building2, Users, Package, Link2, Database,
   Save, Plus, Edit, Eye, CheckCircle, XCircle, AlertCircle, RefreshCw, Loader2, Clock, Palette,
-  MessageCircle, Bell,
+  MessageCircle, Bell, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -70,6 +70,7 @@ export default function SettingsModule() {
   const [organization, setOrganization] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [usersPage, setUsersPage] = useState(1)
 
   const [orgForm, setOrgForm] = useState({
     name: '', slug: '', email: '', phone: '', address: '', city: '',
@@ -128,6 +129,10 @@ export default function SettingsModule() {
   }
 
   useEffect(() => { fetchAll() }, [])
+
+  useEffect(() => {
+    setUsersPage(1)
+  }, [activeTab])
 
   useEffect(() => {
     if (editingUser) {
@@ -508,51 +513,75 @@ export default function SettingsModule() {
                   <Button onClick={() => setShowUserDialog(true)}><Plus className="h-4 w-4 mr-2" />Add User</Button>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map(user => (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-8 w-8">
-                              <AvatarFallback>{user.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-medium">{user.fullName}</p>
-                              <p className="text-xs text-gray-500">{user.email}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell><Badge variant="outline">{ROLE_LABELS[user.role] || user.role}</Badge></TableCell>
-                        <TableCell>{user.department?.name || '-'}</TableCell>
-                        <TableCell>
-                          <Badge variant={user.isActive ? 'default' : 'secondary'}>
-                            {user.isActive ? 'active' : 'inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => { setEditingUser(user); setShowUserDialog(true) }}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => handleToggleUserStatus(user)}>
-                              {user.isActive ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
-                            </Button>
-                          </div>
-                        </TableCell>
+                <div className="border rounded-lg">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {(() => {
+                        const ITEMS_PER_PAGE = 10
+                        const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE)
+                        const startIdx = (usersPage - 1) * ITEMS_PER_PAGE
+                        const endIdx = startIdx + ITEMS_PER_PAGE
+                        const paginatedUsers = users.slice(startIdx, endIdx)
+                        return paginatedUsers.map(user => (
+                          <TableRow key={user.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-8 w-8">
+                                  <AvatarFallback>{user.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-medium">{user.fullName}</p>
+                                  <p className="text-xs text-gray-500">{user.email}</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell><Badge variant="outline">{ROLE_LABELS[user.role] || user.role}</Badge></TableCell>
+                            <TableCell>{user.department?.name || '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant={user.isActive ? 'default' : 'secondary'}>
+                                {user.isActive ? 'active' : 'inactive'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => { setEditingUser(user); setShowUserDialog(true) }}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleToggleUserStatus(user)}>
+                                  {user.isActive ? <XCircle className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      })()}
+                    </TableBody>
+                  </Table>
+                  {users.length > 10 && (() => {
+                    const ITEMS_PER_PAGE = 10
+                    const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE)
+                    return (
+                      <div className="flex items-center justify-end gap-2 p-4 border-t">
+                        <Button variant="outline" size="sm" onClick={() => setUsersPage(p => Math.max(1, p - 1))} disabled={usersPage === 1}>
+                          <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                        </Button>
+                        <span className="text-sm text-gray-600">Page {usersPage} of {totalPages}</span>
+                        <Button variant="outline" size="sm" onClick={() => setUsersPage(p => Math.min(totalPages, p + 1))} disabled={usersPage === totalPages}>
+                          Next<ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </div>
+                    )
+                  })()}
+                </div>
               )}
             </CardContent>
           </Card>

@@ -23,6 +23,7 @@ import client from '@/api/client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+const RADIOLOGY_ITEMS_PER_PAGE = 10
 const EXAM_CATEGORIES = ['x-ray', 'ct', 'mri', 'ultrasound', 'mammography']
 const URGENCY_LEVELS = ['routine', 'urgent', 'stat']
 const REPORT_TEMPLATES = [
@@ -104,6 +105,11 @@ export default function RadiologyModule() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('all')
 
+  // Pagination
+  const [examsPage, setExamsPage] = useState(1)
+  const [ordersPage, setOrdersPage] = useState(1)
+  const [reportsPage, setReportsPage] = useState(1)
+
   // Exam dialog
   const [showExamDialog, setShowExamDialog] = useState(false)
   const [examForm, setExamForm] = useState(emptyExam)
@@ -149,10 +155,10 @@ export default function RadiologyModule() {
     setLoading(true)
     try {
       const [eRes, oRes, pRes, rRes] = await Promise.all([
-        client.get('/radiology?resource=exams'),
-        client.get('/radiology?resource=orders'),
+        client.get(`/radiology?resource=exams&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(examsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
+        client.get(`/radiology?resource=orders&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
         client.get('/patients'),
-        client.get('/radiology?resource=reports'),
+        client.get(`/radiology?resource=reports&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(reportsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
       ])
       if (eRes.success) setExams(eRes.data || [])
       if (oRes.success) setOrders(oRes.data || [])
@@ -160,7 +166,7 @@ export default function RadiologyModule() {
       if (rRes.success) setReports(rRes.data || [])
     } catch { /* silent */ }
     setLoading(false)
-  }, [])
+  }, [examsPage, ordersPage, reportsPage])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -710,7 +716,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
                   <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
                 ) : filteredOrders.length === 0 ? (
                   <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No orders found</TableCell></TableRow>
-                ) : filteredOrders.map(o => (
+                ) : filteredOrders.slice((ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, ordersPage * RADIOLOGY_ITEMS_PER_PAGE).map(o => (
                   <TableRow key={o.id}>
                     <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
                     <TableCell>
@@ -761,6 +767,18 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               </TableBody>
             </Table>
           </CardContent></Card>
+
+          {filteredOrders.length > RADIOLOGY_ITEMS_PER_PAGE && (
+            <div className="border-t pt-4 flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => Math.max(1, p - 1))} disabled={ordersPage === 1}>
+                Previous
+              </Button>
+              <span className="text-sm text-gray-500">Page {ordersPage} of {Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+              <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => p + 1)} disabled={ordersPage >= Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}>
+                Next
+              </Button>
+            </div>
+          )}
         </div>}
 
       {/* ── Exam Catalog ── */}
@@ -801,7 +819,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               <TableBody>
                 {filteredExams.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-400">No exams in catalog</TableCell></TableRow>
-                ) : filteredExams.map(e => (
+                ) : filteredExams.slice((examsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, examsPage * RADIOLOGY_ITEMS_PER_PAGE).map(e => (
                   <TableRow key={e.id}>
                     <TableCell className="font-mono text-sm">{e.examCode || '—'}</TableCell>
                     <TableCell className="font-medium">{e.examName}</TableCell>
@@ -836,6 +854,18 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               </TableBody>
             </Table>
           </CardContent></Card>
+
+          {filteredExams.length > RADIOLOGY_ITEMS_PER_PAGE && (
+            <div className="border-t pt-4 flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setExamsPage(p => Math.max(1, p - 1))} disabled={examsPage === 1}>
+                Previous
+              </Button>
+              <span className="text-sm text-gray-500">Page {examsPage} of {Math.ceil(filteredExams.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+              <Button variant="outline" size="sm" onClick={() => setExamsPage(p => p + 1)} disabled={examsPage >= Math.ceil(filteredExams.length / RADIOLOGY_ITEMS_PER_PAGE)}>
+                Next
+              </Button>
+            </div>
+          )}
         </div>}
 
       {/* ── Reports ── */}
@@ -856,7 +886,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               <TableBody>
                 {reports.length === 0 ? (
                   <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No reports yet</TableCell></TableRow>
-                ) : reports.map(r => {
+                ) : reports.slice((reportsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, reportsPage * RADIOLOGY_ITEMS_PER_PAGE).map(r => {
                   const ord = r.order || orders.find(o => o.id === r.orderId)
                   return (
                     <TableRow key={r.id}>
@@ -888,6 +918,18 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               </TableBody>
             </Table>
           </CardContent></Card>
+
+          {reports.length > RADIOLOGY_ITEMS_PER_PAGE && (
+            <div className="border-t pt-4 flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setReportsPage(p => Math.max(1, p - 1))} disabled={reportsPage === 1}>
+                Previous
+              </Button>
+              <span className="text-sm text-gray-500">Page {reportsPage} of {Math.ceil(reports.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+              <Button variant="outline" size="sm" onClick={() => setReportsPage(p => p + 1)} disabled={reportsPage >= Math.ceil(reports.length / RADIOLOGY_ITEMS_PER_PAGE)}>
+                Next
+              </Button>
+            </div>
+          )}
         </div>}
 
       {/* ── Orders Tab ── */}
@@ -916,7 +958,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
             <TableBody>
               {filteredOrders.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No orders found</TableCell></TableRow>
-              ) : filteredOrders.map(o => (
+              ) : filteredOrders.slice((ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, ordersPage * RADIOLOGY_ITEMS_PER_PAGE).map(o => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono text-xs">{o.orderNumber}</TableCell>
                   <TableCell>
@@ -945,6 +987,18 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
             </TableBody>
           </Table>
         </CardContent></Card>
+
+        {filteredOrders.length > RADIOLOGY_ITEMS_PER_PAGE && (
+          <div className="border-t pt-4 flex items-center justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => Math.max(1, p - 1))} disabled={ordersPage === 1}>
+              Previous
+            </Button>
+            <span className="text-sm text-gray-500">Page {ordersPage} of {Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+            <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => p + 1)} disabled={ordersPage >= Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}>
+              Next
+            </Button>
+          </div>
+        )}
       </div>}
 
       {/* ── Dashboard Tab ── */}

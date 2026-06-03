@@ -59,6 +59,8 @@ export async function getAll(req, res) {
   try {
     const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, category, status, patientId, invoiceId } = req.query
+    const limit = parseInt(req.query.limit || '10')
+    const offset = parseInt(req.query.offset || '0')
 
     if (resource === 'services') {
       const where = {
@@ -69,12 +71,21 @@ export async function getAll(req, res) {
         where.serviceCategory = category
       }
 
-      const services = await db.billingService.findMany({
-        where,
-        orderBy: [{ serviceCategory: 'asc' }, { serviceName: 'asc' }],
-      })
+      const [services, total] = await Promise.all([
+        db.billingService.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          orderBy: [{ serviceCategory: 'asc' }, { serviceName: 'asc' }],
+        }),
+        db.billingService.count({ where }),
+      ])
 
-      return res.json({ success: true, data: services })
+      return res.json({
+        success: true,
+        data: services,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
+      })
     }
 
     if (resource === 'invoices') {
@@ -82,48 +93,66 @@ export async function getAll(req, res) {
       if (status) where.paymentStatus = status
       if (patientId) where.patientId = patientId
 
-      const invoices = await db.invoice.findMany({
-        where,
-        include: {
-          patient: {
-            select: {
-              id: true,
-              mrn: true,
-              firstName: true,
-              lastName: true,
-              phonePrimary: true,
-              hasInsurance: true,
-              insuranceProvider: true,
+      const [invoices, total] = await Promise.all([
+        db.invoice.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          include: {
+            patient: {
+              select: {
+                id: true,
+                mrn: true,
+                firstName: true,
+                lastName: true,
+                phonePrimary: true,
+                hasInsurance: true,
+                insuranceProvider: true,
+              },
             },
+            payments: true,
           },
-          payments: true,
-        },
-        orderBy: { invoiceDate: 'desc' },
-      })
+          orderBy: { invoiceDate: 'desc' },
+        }),
+        db.invoice.count({ where }),
+      ])
 
-      return res.json({ success: true, data: invoices })
+      return res.json({
+        success: true,
+        data: invoices,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
+      })
     }
 
     if (resource === 'payments') {
       const where = { organizationId: ORGANIZATION_ID }
       if (invoiceId) where.invoiceId = invoiceId
 
-      const payments = await db.payment.findMany({
-        where,
-        include: {
-          patient: {
-            select: {
-              id: true,
-              mrn: true,
-              firstName: true,
-              lastName: true,
+      const [payments, total] = await Promise.all([
+        db.payment.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          include: {
+            patient: {
+              select: {
+                id: true,
+                mrn: true,
+                firstName: true,
+                lastName: true,
+              },
             },
           },
-        },
-        orderBy: { paymentDate: 'desc' },
-      })
+          orderBy: { paymentDate: 'desc' },
+        }),
+        db.payment.count({ where }),
+      ])
 
-      return res.json({ success: true, data: payments })
+      return res.json({
+        success: true,
+        data: payments,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
+      })
     }
 
     if (resource === 'stats') {

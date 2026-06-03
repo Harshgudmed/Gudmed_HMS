@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { FileText, Plus, Search, Printer, Edit, Trash2, FileCheck, Loader2, AlertCircle, Filter, X } from 'lucide-react'
+import { FileText, Plus, Search, Printer, Edit, Trash2, FileCheck, Loader2, AlertCircle, Filter, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import client from '@/api/client'
@@ -21,6 +21,7 @@ export default function DeathCertificateModule() {
   const [certificates, setCertificates] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [certificatesPage, setCertificatesPage] = useState(1)
 
   async function fetchCerts() {
     setLoading(true)
@@ -41,6 +42,10 @@ export default function DeathCertificateModule() {
 
   useEffect(() => { fetchCerts() }, [searchQuery, placeFilter])
   useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
+
+  useEffect(() => {
+    setCertificatesPage(1)
+  }, [searchQuery, placeFilter])
 
   const stats = useMemo(() => ({
     total: certificates.length,
@@ -241,39 +246,61 @@ export default function DeathCertificateModule() {
                     No death certificates found matching your criteria.
                   </TableCell>
                 </TableRow>
-              ) : certificates.map(cert => (
-                <TableRow key={cert.id}>
-                  <TableCell className="font-mono font-medium">{cert.certificateNumber}</TableCell>
-                  <TableCell>{cert.patient ? `${cert.patient.firstName} ${cert.patient.lastName}` : 'N/A'}</TableCell>
-                  <TableCell>{cert.patient?.mrn || 'N/A'}</TableCell>
-                  <TableCell>{format(new Date(cert.dateOfDeath), 'dd MMM yyyy')}</TableCell>
-                  <TableCell><Badge variant="outline" className="capitalize">{cert.mannerOfDeath}</Badge></TableCell>
-                  <TableCell>
-                    {cert.issuedAt ? (
-                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100 flex items-center gap-1 w-fit">
-                        <FileCheck className="h-3 w-3" /> Issued
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100 w-fit">Draft/Pending</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => { setSelectedCertId(cert.id); setView('edit') }}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handlePrint(cert.id)}>
-                        <Printer className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(cert.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              ) : (() => {
+                const ITEMS_PER_PAGE = 10
+                const totalPages = Math.ceil(certificates.length / ITEMS_PER_PAGE)
+                const startIdx = (certificatesPage - 1) * ITEMS_PER_PAGE
+                const endIdx = startIdx + ITEMS_PER_PAGE
+                const paginatedData = certificates.slice(startIdx, endIdx)
+                return paginatedData.map(cert => (
+                  <TableRow key={cert.id}>
+                    <TableCell className="font-mono font-medium">{cert.certificateNumber}</TableCell>
+                    <TableCell>{cert.patient ? `${cert.patient.firstName} ${cert.patient.lastName}` : 'N/A'}</TableCell>
+                    <TableCell>{cert.patient?.mrn || 'N/A'}</TableCell>
+                    <TableCell>{format(new Date(cert.dateOfDeath), 'dd MMM yyyy')}</TableCell>
+                    <TableCell><Badge variant="outline" className="capitalize">{cert.mannerOfDeath}</Badge></TableCell>
+                    <TableCell>
+                      {cert.issuedAt ? (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 flex items-center gap-1 w-fit">
+                          <FileCheck className="h-3 w-3" /> Issued
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100 w-fit">Draft/Pending</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setSelectedCertId(cert.id); setView('edit') }}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handlePrint(cert.id)}>
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(cert.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              })()}
             </TableBody>
           </Table>
+          {certificates.length > 10 && (() => {
+            const ITEMS_PER_PAGE = 10
+            const totalPages = Math.ceil(certificates.length / ITEMS_PER_PAGE)
+            return (
+              <div className="flex items-center justify-end gap-2 p-4 border-t">
+                <Button variant="outline" size="sm" onClick={() => setCertificatesPage(p => Math.max(1, p - 1))} disabled={certificatesPage === 1}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                </Button>
+                <span className="text-sm text-gray-600">Page {certificatesPage} of {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setCertificatesPage(p => Math.min(totalPages, p + 1))} disabled={certificatesPage === totalPages}>
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )
+          })()}
         </CardContent>
       </Card>
     </div>

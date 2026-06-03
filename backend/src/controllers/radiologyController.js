@@ -116,6 +116,8 @@ export const getAll = async (req, res, next) => {
   try {
     const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, status, urgency, examCategory, orderId } = req.query
+    const limit = parseInt(req.query.limit || '10')
+    const offset = parseInt(req.query.offset || '0')
 
     if (resource === 'exams') {
       const where = {
@@ -123,11 +125,20 @@ export const getAll = async (req, res, next) => {
         isActive: true,
         ...(examCategory ? { examCategory } : {}),
       }
-      const data = await db.radiologyExam.findMany({
-        where,
-        orderBy: [{ examCategory: 'asc' }, { examName: 'asc' }],
+      const [data, total] = await Promise.all([
+        db.radiologyExam.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          orderBy: [{ examCategory: 'asc' }, { examName: 'asc' }],
+        }),
+        db.radiologyExam.count({ where }),
+      ])
+      return res.json({
+        success: true,
+        data,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
       })
-      return res.json({ success: true, data })
     }
 
     if (resource === 'orders') {
@@ -136,35 +147,53 @@ export const getAll = async (req, res, next) => {
         ...(status ? { status } : {}),
         ...(urgency ? { urgency } : {}),
       }
-      const data = await db.radiologyOrder.findMany({
-        where,
-        include: {
-          patient: { select: patientSelect },
-          exam: true,
-          report: true,
-        },
-        orderBy: { createdAt: 'desc' },
+      const [data, total] = await Promise.all([
+        db.radiologyOrder.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          include: {
+            patient: { select: patientSelect },
+            exam: true,
+            report: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        db.radiologyOrder.count({ where }),
+      ])
+      return res.json({
+        success: true,
+        data,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
       })
-      return res.json({ success: true, data })
     }
 
     if (resource === 'reports') {
       const where = {
         ...(orderId ? { orderId } : {}),
       }
-      const data = await db.radiologyReport.findMany({
-        where,
-        include: {
-          order: {
-            include: {
-              patient: { select: patientSelect },
-              exam: true,
+      const [data, total] = await Promise.all([
+        db.radiologyReport.findMany({
+          where,
+          take: limit,
+          skip: offset,
+          include: {
+            order: {
+              include: {
+                patient: { select: patientSelect },
+                exam: true,
+              },
             },
           },
-        },
-        orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' },
+        }),
+        db.radiologyReport.count({ where }),
+      ])
+      return res.json({
+        success: true,
+        data,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
       })
-      return res.json({ success: true, data })
     }
 
     if (resource === 'stats') {

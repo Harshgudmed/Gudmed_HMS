@@ -274,7 +274,7 @@ export default function PatientsModule() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [offset, setOffset] = useState(0)
-  const limit = 20
+  const limit = 10
 
   const [showRegDialog, setShowRegDialog] = useState(false)
   const location = useLocation()

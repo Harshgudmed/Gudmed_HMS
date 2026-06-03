@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { getOrgSettings } from '@/lib/orgSettings'
 import { format, addDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { toast } from "sonner";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Pill,
   Search,
@@ -83,6 +84,11 @@ const DRUG_FORMS = [
   "Suspension",
 ];
 const SCHEDULE_TYPES = ["none", "G", "H", "H1", "X"];
+
+const DRUGS_PER_PAGE = 15
+const PHARMACY_BATCHES_PER_PAGE = 10
+const PHARMACY_PO_PER_PAGE = 10
+const PHARMACY_SALES_PER_PAGE = 10
 
 const DRUG_INTERACTIONS = [
   {
@@ -247,6 +253,12 @@ export default function PharmacyModule() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [drugInventoryPage, setDrugInventoryPage] = useState(1)
+  const [prescriptionsPage, setPrescriptionsPage] = useState(1)
+  const [lowStockPage, setLowStockPage] = useState(1);
+  const [batchesPage, setBatchesPage] = useState(1);
+  const [poPage, setPoPage] = useState(1);
+  const [salesPage, setSalesPage] = useState(1);
   const [prescriptionFilter, setPrescriptionFilter] = useState("all");
   const [poStatusFilter, setPoStatusFilter] = useState("all");
   const [salesPeriod, setSalesPeriod] = useState("month"); // today | week | month | all
@@ -789,6 +801,27 @@ export default function PharmacyModule() {
     setSavingSale(false);
   };
 
+  // Reset pagination when filters change
+  useEffect(() => {
+    setDrugInventoryPage(1);
+  }, [searchQuery, categoryFilter]);
+
+  useEffect(() => {
+    setPrescriptionsPage(1);
+  }, [prescriptionFilter]);
+
+  useEffect(() => {
+    setLowStockPage(1);
+  }, [drugs]);
+
+  useEffect(() => {
+    setPoPage(1);
+  }, [poStatusFilter]);
+
+  useEffect(() => {
+    setSalesPage(1);
+  }, [salesPeriod]);
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   const filteredDrugs = drugs.filter((d) => {
@@ -1064,27 +1097,49 @@ export default function PharmacyModule() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {lowStockDrugs.map(d => (
-                      <TableRow key={d.id}>
-                        <TableCell className="font-medium">{d.drugName}</TableCell>
-                        <TableCell>{d.drugCategory || "—"}</TableCell>
-                        <TableCell className={`font-semibold ${(d.quantityInStock || 0) === 0 ? "text-red-600" : "text-yellow-600"}`}>
-                          {d.quantityInStock || 0}
-                        </TableCell>
-                        <TableCell>{d.reorderLevel || 10}</TableCell>
-                        <TableCell>{stockBadge(d)}</TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm" variant="outline"
-                            onClick={() => { setSelectedDrug(d); setStockAdjust({ type: "add", amount: 0 }); setShowStockDialog(true); }}
-                          >
-                            <Package className="h-3 w-3 mr-1" /> Restock
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {(() => {
+                      const ITEMS_PER_PAGE = 10
+                      const totalPages = Math.ceil(lowStockDrugs.length / ITEMS_PER_PAGE)
+                      const startIdx = (lowStockPage - 1) * ITEMS_PER_PAGE
+                      const endIdx = startIdx + ITEMS_PER_PAGE
+                      const paginatedLowStock = lowStockDrugs.slice(startIdx, endIdx)
+                      return paginatedLowStock.map(d => (
+                        <TableRow key={d.id}>
+                          <TableCell className="font-medium">{d.drugName}</TableCell>
+                          <TableCell>{d.drugCategory || "—"}</TableCell>
+                          <TableCell className={`font-semibold ${(d.quantityInStock || 0) === 0 ? "text-red-600" : "text-yellow-600"}`}>
+                            {d.quantityInStock || 0}
+                          </TableCell>
+                          <TableCell>{d.reorderLevel || 10}</TableCell>
+                          <TableCell>{stockBadge(d)}</TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm" variant="outline"
+                              onClick={() => { setSelectedDrug(d); setStockAdjust({ type: "add", amount: 0 }); setShowStockDialog(true); }}
+                            >
+                              <Package className="h-3 w-3 mr-1" /> Restock
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    })()}
                   </TableBody>
                 </Table>
+                {lowStockDrugs.length > 10 && (() => {
+                  const ITEMS_PER_PAGE = 10
+                  const totalPages = Math.ceil(lowStockDrugs.length / ITEMS_PER_PAGE)
+                  return (
+                    <div className="flex items-center justify-end gap-2 p-4 border-t">
+                      <Button variant="outline" size="sm" onClick={() => setLowStockPage(p => Math.max(1, p - 1))} disabled={lowStockPage === 1}>
+                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                      </Button>
+                      <span className="text-sm text-gray-600">Page {lowStockPage} of {totalPages}</span>
+                      <Button variant="outline" size="sm" onClick={() => setLowStockPage(p => Math.min(totalPages, p + 1))} disabled={lowStockPage === totalPages}>
+                        Next<ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  )
+                })()}
               </CardContent>
             </Card>
           )}
@@ -1202,8 +1257,12 @@ export default function PharmacyModule() {
                         No drugs found
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredDrugs.map((d) => (
+                  ) : (() => {
+                    const totalPages = Math.ceil(filteredDrugs.length / DRUGS_PER_PAGE);
+                    const startIdx = (drugInventoryPage - 1) * DRUGS_PER_PAGE;
+                    const endIdx = startIdx + DRUGS_PER_PAGE;
+                    const paginatedDrugs = filteredDrugs.slice(startIdx, endIdx);
+                    return paginatedDrugs.map((d) => (
                       <TableRow key={d.id}>
                         <TableCell className="font-medium">
                           {d.drugName}
@@ -1286,10 +1345,38 @@ export default function PharmacyModule() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </TableBody>
               </Table>
+              {filteredDrugs.length > DRUGS_PER_PAGE && (() => {
+                const totalPages = Math.ceil(filteredDrugs.length / DRUGS_PER_PAGE);
+                return (
+                  <div className="flex items-center justify-center gap-2 p-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDrugInventoryPage(p => Math.max(1, p - 1))}
+                      disabled={drugInventoryPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {drugInventoryPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDrugInventoryPage(p => Math.min(totalPages, p + 1))}
+                      disabled={drugInventoryPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1335,8 +1422,12 @@ export default function PharmacyModule() {
                         No prescriptions
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredRx.map((rx) => {
+                  ) : (() => {
+                    const totalPages = Math.ceil(filteredRx.length / DRUGS_PER_PAGE)
+                    const startIdx = (prescriptionsPage - 1) * DRUGS_PER_PAGE
+                    const endIdx = startIdx + DRUGS_PER_PAGE
+                    const paginatedRx = filteredRx.slice(startIdx, endIdx)
+                    return paginatedRx.map((rx) => {
                       let items = [];
                       try {
                         items =
@@ -1390,9 +1481,35 @@ export default function PharmacyModule() {
                         </TableRow>
                       );
                     })
-                  )}
+                  })()}
                 </TableBody>
               </Table>
+              {filteredRx.length > DRUGS_PER_PAGE && (() => {
+                const totalPages = Math.ceil(filteredRx.length / DRUGS_PER_PAGE)
+                return (
+                  <div className="flex items-center justify-end gap-2 p-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPrescriptionsPage(p => Math.max(1, p - 1))}
+                      disabled={prescriptionsPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {prescriptionsPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPrescriptionsPage(p => Math.min(totalPages, p + 1))}
+                      disabled={prescriptionsPage === totalPages}
+                    >
+                      Next<ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1436,8 +1553,12 @@ export default function PharmacyModule() {
                         No batches
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    batches.map((b) => {
+                  ) : (() => {
+                    const totalPages = Math.ceil(batches.length / PHARMACY_BATCHES_PER_PAGE);
+                    const startIdx = (batchesPage - 1) * PHARMACY_BATCHES_PER_PAGE;
+                    const endIdx = startIdx + PHARMACY_BATCHES_PER_PAGE;
+                    const paginatedBatches = batches.slice(startIdx, endIdx);
+                    return paginatedBatches.map((b) => {
                       const dl = Math.ceil(
                         (new Date(b.expiryDate) - new Date()) / 86400000,
                       );
@@ -1517,10 +1638,38 @@ export default function PharmacyModule() {
                           </TableCell>
                         </TableRow>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </TableBody>
               </Table>
+              {batches.length > PHARMACY_BATCHES_PER_PAGE && (() => {
+                const totalPages = Math.ceil(batches.length / PHARMACY_BATCHES_PER_PAGE);
+                return (
+                  <div className="flex items-center justify-end gap-2 p-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBatchesPage(p => Math.max(1, p - 1))}
+                      disabled={batchesPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {batchesPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBatchesPage(p => Math.min(totalPages, p + 1))}
+                      disabled={batchesPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1579,8 +1728,12 @@ export default function PharmacyModule() {
                         No purchase orders
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredPOs.map((po) => (
+                  ) : (() => {
+                    const totalPages = Math.ceil(filteredPOs.length / PHARMACY_PO_PER_PAGE);
+                    const startIdx = (poPage - 1) * PHARMACY_PO_PER_PAGE;
+                    const endIdx = startIdx + PHARMACY_PO_PER_PAGE;
+                    const paginatedPOs = filteredPOs.slice(startIdx, endIdx);
+                    return paginatedPOs.map((po) => (
                       <TableRow key={po.id}>
                         <TableCell className="font-mono">
                           {po.poNumber}
@@ -1661,10 +1814,38 @@ export default function PharmacyModule() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </TableBody>
               </Table>
+              {filteredPOs.length > PHARMACY_PO_PER_PAGE && (() => {
+                const totalPages = Math.ceil(filteredPOs.length / PHARMACY_PO_PER_PAGE);
+                return (
+                  <div className="flex items-center justify-end gap-2 p-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPoPage(p => Math.max(1, p - 1))}
+                      disabled={poPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {poPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPoPage(p => Math.min(totalPages, p + 1))}
+                      disabled={poPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1718,8 +1899,12 @@ export default function PharmacyModule() {
                         No sales records
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredSales.map((s) => {
+                  ) : (() => {
+                    const totalPages = Math.ceil(filteredSales.length / PHARMACY_SALES_PER_PAGE);
+                    const startIdx = (salesPage - 1) * PHARMACY_SALES_PER_PAGE;
+                    const endIdx = startIdx + PHARMACY_SALES_PER_PAGE;
+                    const paginatedSales = filteredSales.slice(startIdx, endIdx);
+                    return paginatedSales.map((s) => {
                       const name = s.patient
                         ? `${s.patient.firstName} ${s.patient.lastName || ""}`.trim()
                         : "Walk-in";
@@ -1754,10 +1939,38 @@ export default function PharmacyModule() {
                           </TableCell>
                         </TableRow>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </TableBody>
               </Table>
+              {filteredSales.length > PHARMACY_SALES_PER_PAGE && (() => {
+                const totalPages = Math.ceil(filteredSales.length / PHARMACY_SALES_PER_PAGE);
+                return (
+                  <div className="flex items-center justify-end gap-2 p-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSalesPage(p => Math.max(1, p - 1))}
+                      disabled={salesPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {salesPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSalesPage(p => Math.min(totalPages, p + 1))}
+                      disabled={salesPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>

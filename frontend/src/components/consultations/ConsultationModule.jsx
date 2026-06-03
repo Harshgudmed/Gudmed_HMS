@@ -165,6 +165,8 @@ ${consultation.notes ? `<div class="section"><div class="section-title">Addition
   printViaIframe(html)
 }
 
+const ITEMS_PER_PAGE = 15
+
 export default function ConsultationModule() {
   const [view, setView] = useState('list')
   const [orgInfo, setOrgInfo] = useState({ name: 'Hospital', address: '', city: '', phone: '', email: '' })
@@ -172,6 +174,7 @@ export default function ConsultationModule() {
   const [viewingConsultation, setViewingConsultation] = useState(null)
   const [filterSearch, setFilterSearch] = useState('')
   const [filterDoctor, setFilterDoctor] = useState('all')
+  const [currentPage, setCurrentPage] = useState(1)
 
   const [activeTab, setActiveTab] = useState('vitals')
   const [selectedPatientId, setSelectedPatientId] = useState('')
@@ -247,6 +250,10 @@ export default function ConsultationModule() {
     const matchDoctor = filterDoctor === 'all' || c.doctorId === filterDoctor
     return matchSearch && matchDoctor
   })
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filterSearch, filterDoctor])
 
   const calcBMI = useCallback(() => {
     const w = vitalsForm.getValues('weight'), h = vitalsForm.getValues('height')
@@ -496,69 +503,103 @@ export default function ConsultationModule() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {filteredConsultations.map(c => {
-              const pat = c.patient
-              const patName = pat ? getFullName(pat) : 'Unknown Patient'
-              const patMrn = pat?.mrn || '—'
-              const patAge = pat?.dateOfBirth ? getAge(pat.dateOfBirth) : 0
-              const patGender = pat?.gender || ''
-              const docName = c.doctor?.fullName || '—'
-              const hasPrescription = c.prescriptions && c.prescriptions.length > 0
-              const bmiNum = c.weight && c.height ? Math.round(c.weight / ((c.height / 100) ** 2) * 10) / 10 : null
+            {(() => {
+              const totalPages = Math.ceil(filteredConsultations.length / ITEMS_PER_PAGE)
+              const startIdx = (currentPage - 1) * ITEMS_PER_PAGE
+              const endIdx = startIdx + ITEMS_PER_PAGE
+              const paginatedConsultations = filteredConsultations.slice(startIdx, endIdx)
+
               return (
-                <Card key={c.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-4">
-                      <div className="h-11 w-11 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                        {initials(patName)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-semibold text-base">{patName}</p>
-                            <p className="text-sm text-gray-500">UHID: {patMrn} &bull; {patAge} yrs &bull; {patGender}</p>
+                <>
+                  {paginatedConsultations.map(c => {
+                    const pat = c.patient
+                    const patName = pat ? getFullName(pat) : 'Unknown Patient'
+                    const patMrn = pat?.mrn || '—'
+                    const patAge = pat?.dateOfBirth ? getAge(pat.dateOfBirth) : 0
+                    const patGender = pat?.gender || ''
+                    const docName = c.doctor?.fullName || '—'
+                    const hasPrescription = c.prescriptions && c.prescriptions.length > 0
+                    const bmiNum = c.weight && c.height ? Math.round(c.weight / ((c.height / 100) ** 2) * 10) / 10 : null
+                    return (
+                      <Card key={c.id} className="hover:shadow-md transition-shadow">
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-4">
+                            <div className="h-11 w-11 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                              {initials(patName)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-semibold text-base">{patName}</p>
+                                  <p className="text-sm text-gray-500">UHID: {patMrn} &bull; {patAge} yrs &bull; {patGender}</p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  <div className="text-sm text-gray-500">{format(new Date(c.visitDate), 'dd MMM yyyy HH:mm')}</div>
+                                  <Badge variant="outline" className="text-xs capitalize">{c.visitType || 'Outpatient'}</Badge>
+                                </div>
+                              </div>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+                                {c.chiefComplaint && <p className="text-sm"><span className="font-medium text-gray-600">Chief Complaint:</span> {c.chiefComplaint}</p>}
+                                {c.diagnosis && <p className="text-sm"><span className="font-medium text-gray-600">Diagnosis:</span> {c.diagnosis}</p>}
+                              </div>
+                              {(c.temperature || c.bloodPressureSystolic || c.pulseRate) && (
+                                <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1">
+                                  {c.temperature && <span><Thermometer className="h-3 w-3 inline mr-0.5" />{c.temperature}°C</span>}
+                                  {c.bloodPressureSystolic && <span><Heart className="h-3 w-3 inline mr-0.5" />{c.bloodPressureSystolic}/{c.bloodPressureDiastolic}</span>}
+                                  {c.pulseRate && <span><Activity className="h-3 w-3 inline mr-0.5" />{c.pulseRate} bpm</span>}
+                                  {c.oxygenSaturation && <span><Droplet className="h-3 w-3 inline mr-0.5" />{c.oxygenSaturation}%</span>}
+                                  {bmiNum && <span>BMI {bmiNum}</span>}
+                                </div>
+                              )}
+                              <div className="mt-2 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500">Dr. {docName}</span>
+                                  {hasPrescription && <Badge variant="secondary" className="text-xs"><Pill className="h-3 w-3 mr-1" />Rx</Badge>}
+                                </div>
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="ghost" className="h-8 px-2 text-gray-600" onClick={() => setViewingConsultation(c)}>
+                                    <Eye className="h-4 w-4 mr-1" />View
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-8 px-2 text-blue-600" onClick={() => openEdit(c)}>
+                                    <Edit className="h-4 w-4 mr-1" />Edit
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-8 px-2 text-green-600" onClick={() => printConsultation(c, patName, patMrn, patAge, patGender, docName, orgInfo)}>
+                                    <Printer className="h-4 w-4 mr-1" />Print
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <div className="text-sm text-gray-500">{format(new Date(c.visitDate), 'dd MMM yyyy HH:mm')}</div>
-                            <Badge variant="outline" className="text-xs capitalize">{c.visitType || 'Outpatient'}</Badge>
-                          </div>
-                        </div>
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1">
-                          {c.chiefComplaint && <p className="text-sm"><span className="font-medium text-gray-600">Chief Complaint:</span> {c.chiefComplaint}</p>}
-                          {c.diagnosis && <p className="text-sm"><span className="font-medium text-gray-600">Diagnosis:</span> {c.diagnosis}</p>}
-                        </div>
-                        {(c.temperature || c.bloodPressureSystolic || c.pulseRate) && (
-                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1">
-                            {c.temperature && <span><Thermometer className="h-3 w-3 inline mr-0.5" />{c.temperature}°C</span>}
-                            {c.bloodPressureSystolic && <span><Heart className="h-3 w-3 inline mr-0.5" />{c.bloodPressureSystolic}/{c.bloodPressureDiastolic}</span>}
-                            {c.pulseRate && <span><Activity className="h-3 w-3 inline mr-0.5" />{c.pulseRate} bpm</span>}
-                            {c.oxygenSaturation && <span><Droplet className="h-3 w-3 inline mr-0.5" />{c.oxygenSaturation}%</span>}
-                            {bmiNum && <span>BMI {bmiNum}</span>}
-                          </div>
-                        )}
-                        <div className="mt-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500">Dr. {docName}</span>
-                            {hasPrescription && <Badge variant="secondary" className="text-xs"><Pill className="h-3 w-3 mr-1" />Rx</Badge>}
-                          </div>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-gray-600" onClick={() => setViewingConsultation(c)}>
-                              <Eye className="h-4 w-4 mr-1" />View
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-blue-600" onClick={() => openEdit(c)}>
-                              <Edit className="h-4 w-4 mr-1" />Edit
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-green-600" onClick={() => printConsultation(c, patName, patMrn, patAge, patGender, docName, orgInfo)}>
-                              <Printer className="h-4 w-4 mr-1" />Print
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-600">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                  )}
+                </>
               )
-            })}
+            })()}
           </div>
         )}
 
@@ -901,52 +942,54 @@ export default function ConsultationModule() {
                   <p className="text-sm">No medications added yet</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {prescriptionItems.map((item, i) => (
-                    <div key={i} className="border rounded-lg p-3 bg-gray-50">
-                      <div className="flex justify-between mb-2">
-                        <div>
-                          <p className="font-semibold">{item.drugName}</p>
-                          {item.genericName && <p className="text-xs text-gray-500">{item.genericName}</p>}
+                <div className="max-h-96 overflow-y-auto border rounded-lg">
+                  <div className="space-y-3 p-3">
+                    {prescriptionItems.map((item, i) => (
+                      <div key={i} className="border rounded-lg p-3 bg-gray-50">
+                        <div className="flex justify-between mb-2">
+                          <div>
+                            <p className="font-semibold">{item.drugName}</p>
+                            {item.genericName && <p className="text-xs text-gray-500">{item.genericName}</p>}
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => removeDrug(i)}>
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => removeDrug(i)}>
-                          <X className="h-4 w-4" />
-                        </Button>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                          <div>
+                            <Label className="text-xs text-gray-500">Dosage</Label>
+                            <Input className="h-8 text-sm" value={item.dosage} placeholder="e.g. 500mg" onChange={e => updateItem(i, 'dosage', e.target.value)} />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Frequency</Label>
+                            <Select value={item.frequency} onValueChange={v => updateItem(i, 'frequency', v)}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {['OD', 'BD', 'TID', 'QID', 'SOS', 'Stat', 'HS', 'AC', 'PC'].map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Duration</Label>
+                            <Select value={item.duration} onValueChange={v => updateItem(i, 'duration', v)}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {['1 day', '3 days', '5 days', '7 days', '10 days', '14 days', '1 month', '3 months', 'Ongoing'].map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Quantity</Label>
+                            <Input className="h-8 text-sm" type="number" value={item.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value))} />
+                          </div>
+                          <div className="col-span-2 md:col-span-4">
+                            <Label className="text-xs text-gray-500">Instructions</Label>
+                            <Input className="h-8 text-sm" value={item.instructions} placeholder="e.g. Take after food" onChange={e => updateItem(i, 'instructions', e.target.value)} />
+                          </div>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                        <div>
-                          <Label className="text-xs text-gray-500">Dosage</Label>
-                          <Input className="h-8 text-sm" value={item.dosage} placeholder="e.g. 500mg" onChange={e => updateItem(i, 'dosage', e.target.value)} />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-gray-500">Frequency</Label>
-                          <Select value={item.frequency} onValueChange={v => updateItem(i, 'frequency', v)}>
-                            <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {['OD', 'BD', 'TID', 'QID', 'SOS', 'Stat', 'HS', 'AC', 'PC'].map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-gray-500">Duration</Label>
-                          <Select value={item.duration} onValueChange={v => updateItem(i, 'duration', v)}>
-                            <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {['1 day', '3 days', '5 days', '7 days', '10 days', '14 days', '1 month', '3 months', 'Ongoing'].map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-gray-500">Quantity</Label>
-                          <Input className="h-8 text-sm" type="number" value={item.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value))} />
-                        </div>
-                        <div className="col-span-2 md:col-span-4">
-                          <Label className="text-xs text-gray-500">Instructions</Label>
-                          <Input className="h-8 text-sm" value={item.instructions} placeholder="e.g. Take after food" onChange={e => updateItem(i, 'instructions', e.target.value)} />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </CardContent>

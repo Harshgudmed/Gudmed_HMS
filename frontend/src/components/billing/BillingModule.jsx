@@ -96,6 +96,8 @@ const CAT_META = {
   Vaccine: { color: 'bg-green-100 text-green-800', dot: '#16a34a' },
 }
 
+const BILLING_ITEMS_PER_PAGE = 10
+
 const DEFAULT_CLINIC = {
   doctorName: 'Dr. Abebe Kebede', qualification: 'MBBS, MD (General Medicine)',
   clinicName: 'Hospital', address: '', phone: '', regNo: '', gstNo: '',
@@ -177,6 +179,11 @@ export default function BillingModule({ onBack }) {
   const [newService, setNewService] = useState({ name: '', category: 'Consultation', price: '', description: '' })
   const [savingService, setSavingService] = useState(false)
 
+  // Pagination
+  const [invoicesPage, setInvoicesPage] = useState(1)
+  const [paymentsPage, setPaymentsPage] = useState(1)
+  const [servicesPage, setServicesPage] = useState(1)
+
   // Derived cart totals
   const subtotal = form.items.reduce((a, i) => a + i.qty * i.amt, 0)
   const discountAmt = Math.round(subtotal * form.discount / 100)
@@ -187,7 +194,8 @@ export default function BillingModule({ onBack }) {
   const fetchBills = useCallback(async () => {
     setBillsLoading(true)
     try {
-      const res = await client.get('/billing', { params: { resource: 'invoices' } })
+      const offset = (invoicesPage - 1) * BILLING_ITEMS_PER_PAGE
+      const res = await client.get('/billing', { params: { resource: 'invoices', limit: BILLING_ITEMS_PER_PAGE, offset } })
       if (res.success) {
         const mapped = res.data.map((inv) => {
           let items = []
@@ -220,25 +228,27 @@ export default function BillingModule({ onBack }) {
       }
     } catch { /* silent */ }
     finally { setBillsLoading(false) }
-  }, [])
+  }, [invoicesPage])
 
   const fetchPayments = useCallback(async () => {
     setPaymentsLoading(true)
     try {
-      const res = await client.get('/billing', { params: { resource: 'payments' } })
+      const offset = (paymentsPage - 1) * BILLING_ITEMS_PER_PAGE
+      const res = await client.get('/billing', { params: { resource: 'payments', limit: BILLING_ITEMS_PER_PAGE, offset } })
       if (res.success) setPayments(res.data || [])
     } catch { /* silent */ }
     finally { setPaymentsLoading(false) }
-  }, [])
+  }, [paymentsPage])
 
   const fetchServices = useCallback(async () => {
     setServicesLoading(true)
     try {
-      const res = await client.get('/billing', { params: { resource: 'services' } })
+      const offset = (servicesPage - 1) * BILLING_ITEMS_PER_PAGE
+      const res = await client.get('/billing', { params: { resource: 'services', limit: BILLING_ITEMS_PER_PAGE, offset } })
       if (res.success) setServices(res.data || [])
     } catch { /* silent */ }
     finally { setServicesLoading(false) }
-  }, [])
+  }, [servicesPage])
 
   const fetchAll = useCallback(() => {
     fetchBills()
@@ -589,6 +599,35 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
     !catSearch || i.name.toLowerCase().includes(catSearch.toLowerCase()) || (i.sub || '').toLowerCase().includes(catSearch.toLowerCase())
   )
 
+  // ── Pagination helper ──────────────────────────────────────────────────────
+  function PaginationControls({ currentPage, setCurrentPage, totalItems }) {
+    const totalPages = Math.ceil(totalItems / BILLING_ITEMS_PER_PAGE)
+    if (totalPages <= 1) return null
+    return (
+      <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t">
+        <span className="text-sm text-gray-600">Page {currentPage} of {totalPages}</span>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+            disabled={currentPage === 1}
+          >
+            Previous
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+            disabled={currentPage === totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -698,43 +737,50 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
               {billsLoading ? (
                 <div className="text-center py-10 text-gray-400">Loading invoices...</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Items</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBills.length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="text-center py-10 text-gray-400">No invoices found</TableCell></TableRow>
-                    ) : filteredBills.map(b => (
-                      <TableRow key={b.id}>
-                        <TableCell className="font-mono text-sm text-blue-600">{b.invoiceNo}</TableCell>
-                        <TableCell className="font-medium">{b.patientName}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{b.phone || '—'}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{b.items.length}</TableCell>
-                        <TableCell className="font-semibold">{fmt(b.total)}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{b.date}</TableCell>
-                        <TableCell><PayBadge paid={b.paid} /></TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(b)}>View</Button>
-                            {!b.paid && (
-                              <Button size="sm" onClick={() => { setShowPayModal(b); setPayMethod('Cash') }}>Pay</Button>
-                            )}
-                          </div>
-                        </TableCell>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Invoice #</TableHead>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Items</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredBills.length === 0 ? (
+                        <TableRow><TableCell colSpan={8} className="text-center py-10 text-gray-400">No invoices found</TableCell></TableRow>
+                      ) : filteredBills.slice((invoicesPage - 1) * BILLING_ITEMS_PER_PAGE, invoicesPage * BILLING_ITEMS_PER_PAGE).map(b => (
+                        <TableRow key={b.id}>
+                          <TableCell className="font-mono text-sm text-blue-600">{b.invoiceNo}</TableCell>
+                          <TableCell className="font-medium">{b.patientName}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{b.phone || '—'}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{b.items.length}</TableCell>
+                          <TableCell className="font-semibold">{fmt(b.total)}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{b.date}</TableCell>
+                          <TableCell><PayBadge paid={b.paid} /></TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(b)}>View</Button>
+                              {!b.paid && (
+                                <Button size="sm" onClick={() => { setShowPayModal(b); setPayMethod('Cash') }}>Pay</Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {filteredBills.length > BILLING_ITEMS_PER_PAGE && (
+                    <div className="px-4">
+                      <PaginationControls currentPage={invoicesPage} setCurrentPage={setInvoicesPage} totalItems={filteredBills.length} />
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -921,34 +967,41 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
               {paymentsLoading ? (
                 <div className="text-center py-10 text-gray-400">Loading payments...</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Receipt #</TableHead>
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {payments.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center py-10 text-gray-400">No payment records yet</TableCell></TableRow>
-                    ) : payments.map(p => (
-                      <TableRow key={p.id}>
-                        <TableCell className="font-mono text-sm text-blue-600">{p.receiptNumber}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{p.invoice?.invoiceNumber || '—'}</TableCell>
-                        <TableCell className="font-medium">{p.invoice?.patient ? `${p.invoice.patient.firstName} ${p.invoice.patient.lastName}` : '—'}</TableCell>
-                        <TableCell className="font-bold text-green-700">{fmt(p.amount)}</TableCell>
-                        <TableCell><Badge className="bg-blue-100 text-blue-800">{p.paymentMethod}</Badge></TableCell>
-                        <TableCell className="text-sm text-gray-500">{p.paymentDate ? format(new Date(p.paymentDate), 'dd MMM yyyy') : '—'}</TableCell>
-                        <TableCell><Badge className="bg-green-100 text-green-800">Received</Badge></TableCell>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Receipt #</TableHead>
+                        <TableHead>Invoice #</TableHead>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {payments.length === 0 ? (
+                        <TableRow><TableCell colSpan={7} className="text-center py-10 text-gray-400">No payment records yet</TableCell></TableRow>
+                      ) : payments.slice((paymentsPage - 1) * BILLING_ITEMS_PER_PAGE, paymentsPage * BILLING_ITEMS_PER_PAGE).map(p => (
+                        <TableRow key={p.id}>
+                          <TableCell className="font-mono text-sm text-blue-600">{p.receiptNumber}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{p.invoice?.invoiceNumber || '—'}</TableCell>
+                          <TableCell className="font-medium">{p.invoice?.patient ? `${p.invoice.patient.firstName} ${p.invoice.patient.lastName}` : '—'}</TableCell>
+                          <TableCell className="font-bold text-green-700">{fmt(p.amount)}</TableCell>
+                          <TableCell><Badge className="bg-blue-100 text-blue-800">{p.paymentMethod}</Badge></TableCell>
+                          <TableCell className="text-sm text-gray-500">{p.paymentDate ? format(new Date(p.paymentDate), 'dd MMM yyyy') : '—'}</TableCell>
+                          <TableCell><Badge className="bg-green-100 text-green-800">Received</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {payments.length > BILLING_ITEMS_PER_PAGE && (
+                    <div className="px-4">
+                      <PaginationControls currentPage={paymentsPage} setCurrentPage={setPaymentsPage} totalItems={payments.length} />
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -965,28 +1018,35 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
               {servicesLoading ? (
                 <div className="text-center py-10 text-gray-400">Loading services...</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Description</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {services.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center py-10 text-gray-400">No services added yet</TableCell></TableRow>
-                    ) : services.map(s => (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-medium">{s.name}</TableCell>
-                        <TableCell><Badge variant="outline">{s.category || '—'}</Badge></TableCell>
-                        <TableCell className="font-semibold">₹{Number(s.price || 0).toLocaleString('en-IN')}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{s.description || '—'}</TableCell>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Description</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {services.length === 0 ? (
+                        <TableRow><TableCell colSpan={4} className="text-center py-10 text-gray-400">No services added yet</TableCell></TableRow>
+                      ) : services.slice((servicesPage - 1) * BILLING_ITEMS_PER_PAGE, servicesPage * BILLING_ITEMS_PER_PAGE).map(s => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">{s.name}</TableCell>
+                          <TableCell><Badge variant="outline">{s.category || '—'}</Badge></TableCell>
+                          <TableCell className="font-semibold">₹{Number(s.price || 0).toLocaleString('en-IN')}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{s.description || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {services.length > BILLING_ITEMS_PER_PAGE && (
+                    <div className="px-4">
+                      <PaginationControls currentPage={servicesPage} setCurrentPage={setServicesPage} totalItems={services.length} />
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

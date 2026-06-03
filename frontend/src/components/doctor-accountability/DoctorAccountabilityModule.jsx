@@ -13,7 +13,7 @@ import { format } from 'date-fns'
 import {
   UserCog, DollarSign, CheckCircle2, BarChart3,
   Search, Plus, Edit2, Trash2, CheckSquare, RefreshCw,
-  Users, Clock, Wallet, Printer, FileDown, CheckCheck,
+  Users, Clock, Wallet, Printer, FileDown, CheckCheck, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import client from '@/api/client'
 
@@ -233,6 +233,8 @@ function CommissionsTab() {
   const [settleNote, setSettleNote] = useState('')
   const [settling, setSettling] = useState(false)
 
+  const [commissionsPage, setCommissionsPage] = useState(1)
+
   const load = useCallback(async () => {
     setLoading(true)
     const params = new URLSearchParams({ resource: 'commissions' })
@@ -254,6 +256,10 @@ function CommissionsTab() {
   }, [filterDoctor, filterStatus, filterPeriod])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    setCommissionsPage(1)
+  }, [filterDoctor, filterStatus, filterPeriod, filterDate])
 
   // ── Client-side date filter ────────────────────────────────────────────────
   const now = new Date()
@@ -461,58 +467,82 @@ function CommissionsTab() {
       ) : displayed.length === 0 ? (
         <div className="text-center py-12 text-gray-400">No commission entries found.</div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead><TableHead>Doctor</TableHead><TableHead>Invoice ID</TableHead>
-              <TableHead>Invoice Amt</TableHead><TableHead>Rate</TableHead><TableHead>Commission</TableHead>
-              <TableHead>Period</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {displayed.map(c => (
-              <TableRow key={c.id}>
-                <TableCell className="text-sm">{format(new Date(c.createdAt), 'dd MMM yyyy')}</TableCell>
-                <TableCell className="font-medium">{c.doctor.fullName}</TableCell>
-                <TableCell className="text-gray-500 text-sm">{c.invoiceId || '—'}</TableCell>
-                <TableCell>{fmt(c.invoiceAmount)}</TableCell>
-                <TableCell className="text-gray-500 text-sm">{c.commissionType === 'percentage' ? `${c.commissionRate}%` : fmt(c.commissionRate)}</TableCell>
-                <TableCell className="font-semibold text-green-700">{fmt(c.commissionAmount)}</TableCell>
-                <TableCell className="text-sm text-gray-500">{periodLabel(c.period)}</TableCell>
-                <TableCell>
-                  <Badge variant={c.status === 'settled' ? 'default' : 'secondary'} className={c.status === 'settled' ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
-                    {c.status === 'settled' ? 'Settled' : 'Pending'}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex gap-1 justify-end">
-                    {c.status === 'pending' && (
-                      <>
-                        {/* Edit */}
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-blue-600" title="Edit" onClick={() => openEdit(c)}>
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        {/* Quick settle */}
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-green-600" title="Settle" onClick={() => openSettle(c)}>
-                          <CheckCheck className="h-3.5 w-3.5" />
-                        </Button>
-                        {/* Delete */}
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-red-500" title="Delete" onClick={() => deleteCommission(c.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    )}
-                    {c.status === 'settled' && (
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-gray-500" title="Print Receipt" onClick={() => printReceipt(c)}>
-                        <Printer className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+        <div className="border rounded-lg">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead><TableHead>Doctor</TableHead><TableHead>Invoice ID</TableHead>
+                <TableHead>Invoice Amt</TableHead><TableHead>Rate</TableHead><TableHead>Commission</TableHead>
+                <TableHead>Period</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(() => {
+                const ITEMS_PER_PAGE = 10
+                const totalPages = Math.ceil(displayed.length / ITEMS_PER_PAGE)
+                const startIdx = (commissionsPage - 1) * ITEMS_PER_PAGE
+                const endIdx = startIdx + ITEMS_PER_PAGE
+                const paginatedData = displayed.slice(startIdx, endIdx)
+                return paginatedData.map(c => (
+                  <TableRow key={c.id}>
+                    <TableCell className="text-sm">{format(new Date(c.createdAt), 'dd MMM yyyy')}</TableCell>
+                    <TableCell className="font-medium">{c.doctor.fullName}</TableCell>
+                    <TableCell className="text-gray-500 text-sm">{c.invoiceId || '—'}</TableCell>
+                    <TableCell>{fmt(c.invoiceAmount)}</TableCell>
+                    <TableCell className="text-gray-500 text-sm">{c.commissionType === 'percentage' ? `${c.commissionRate}%` : fmt(c.commissionRate)}</TableCell>
+                    <TableCell className="font-semibold text-green-700">{fmt(c.commissionAmount)}</TableCell>
+                    <TableCell className="text-sm text-gray-500">{periodLabel(c.period)}</TableCell>
+                    <TableCell>
+                      <Badge variant={c.status === 'settled' ? 'default' : 'secondary'} className={c.status === 'settled' ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
+                        {c.status === 'settled' ? 'Settled' : 'Pending'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex gap-1 justify-end">
+                        {c.status === 'pending' && (
+                          <>
+                            {/* Edit */}
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-blue-600" title="Edit" onClick={() => openEdit(c)}>
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            {/* Quick settle */}
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-green-600" title="Settle" onClick={() => openSettle(c)}>
+                              <CheckCheck className="h-3.5 w-3.5" />
+                            </Button>
+                            {/* Delete */}
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-red-500" title="Delete" onClick={() => deleteCommission(c.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        {c.status === 'settled' && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-gray-500" title="Print Receipt" onClick={() => printReceipt(c)}>
+                            <Printer className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              })()}
+            </TableBody>
+          </Table>
+          {displayed.length > 10 && (() => {
+            const ITEMS_PER_PAGE = 10
+            const totalPages = Math.ceil(displayed.length / ITEMS_PER_PAGE)
+            return (
+              <div className="flex items-center justify-end gap-2 p-4 border-t bg-gray-50">
+                <Button variant="outline" size="sm" onClick={() => setCommissionsPage(p => Math.max(1, p - 1))} disabled={commissionsPage === 1}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                </Button>
+                <span className="text-sm text-gray-600">Page {commissionsPage} of {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setCommissionsPage(p => Math.min(totalPages, p + 1))} disabled={commissionsPage === totalPages}>
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )
+          })()}
+        </div>
       )}
 
       {/* Add Commission Dialog */}

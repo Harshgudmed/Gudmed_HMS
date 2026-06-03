@@ -39,6 +39,8 @@ const TRIAGE_TYPES = {
   psychiatric:{ label: 'Psychiatric Triage',icon: Shield,      color: 'border-purple-300 bg-purple-50' },
 }
 
+const TRIAGE_ITEMS_PER_PAGE = 10
+
 const triageSchema = z.object({
   patientId:             z.string().min(1, 'Patient is required'),
   triageType:            z.enum(['emergency', 'pediatric', 'mch', 'psychiatric']),
@@ -77,6 +79,7 @@ export default function TriageModule() {
   const [triageRecords, setTriageRecords]           = useState([])
   const [loading, setLoading]                       = useState(true)
   const [error, setError]                           = useState(null)
+  const [triageCurrentPage, setTriageCurrentPage]   = useState(1)
 
   const form = useForm({
     resolver: zodResolver(triageSchema),
@@ -97,7 +100,8 @@ export default function TriageModule() {
   const fetchTriageRecords = useCallback(async () => {
     setError(null)
     try {
-      const res = await client.get('/triage')
+      const offset = (triageCurrentPage - 1) * TRIAGE_ITEMS_PER_PAGE
+      const res = await client.get(`/triage?limit=${TRIAGE_ITEMS_PER_PAGE}&offset=${offset}`)
       const raw = res.data ?? []
       setTriageRecords(raw.map(q => ({
         id: q.id,
@@ -113,7 +117,7 @@ export default function TriageModule() {
     } catch (err) {
       setError(err.message || 'Failed to load triage records')
     }
-  }, [])
+  }, [triageCurrentPage])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -127,6 +131,11 @@ export default function TriageModule() {
     const interval = setInterval(fetchTriageRecords, 30000)
     return () => clearInterval(interval)
   }, [fetchData, fetchTriageRecords])
+
+  // Reset page to 1 when triageRecords changes
+  useEffect(() => {
+    setTriageCurrentPage(1)
+  }, [triageRecords.length])
 
   const stats = useMemo(() => {
     const today = new Date()
@@ -395,6 +404,7 @@ export default function TriageModule() {
                     filteredRecords
                       .filter(r => r.status === 'waiting')
                       .sort((a, b) => ({ red: 0, yellow: 1, green: 2, black: 3 }[a.urgencyLevel] - { red: 0, yellow: 1, green: 2, black: 3 }[b.urgencyLevel]))
+                      .slice((triageCurrentPage - 1) * TRIAGE_ITEMS_PER_PAGE, triageCurrentPage * TRIAGE_ITEMS_PER_PAGE)
                       .map((record) => (
                         <TableRow key={record.id}>
                           <TableCell>
@@ -426,6 +436,19 @@ export default function TriageModule() {
                   )}
                 </TableBody>
               </Table>
+              {filteredRecords.filter(r => r.status === 'waiting').length > TRIAGE_ITEMS_PER_PAGE && (
+                <div className="flex items-center justify-end gap-2 p-4 border-t">
+                  <Button variant="outline" size="sm" onClick={() => setTriageCurrentPage(prev => Math.max(1, prev - 1))} disabled={triageCurrentPage === 1}>
+                    Previous
+                  </Button>
+                  <span className="text-sm text-gray-600">
+                    Page {triageCurrentPage} of {Math.ceil(filteredRecords.filter(r => r.status === 'waiting').length / TRIAGE_ITEMS_PER_PAGE)}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => setTriageCurrentPage(prev => prev + 1)} disabled={triageCurrentPage >= Math.ceil(filteredRecords.filter(r => r.status === 'waiting').length / TRIAGE_ITEMS_PER_PAGE)}>
+                    Next
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -90,15 +90,29 @@ export const getAll = async (req, res, next) => {
     const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, testCategory, status, priority, orderId } = req.query
 
+    // Parse pagination parameters
+    const limit = parseInt(req.query.limit || '10')
+    const offset = parseInt(req.query.offset || '0')
+
     if (resource === 'tests') {
       const where = { organizationId: ORGANIZATION_ID, isActive: true }
       if (testCategory) where.testCategory = testCategory
 
-      const data = await db.labTest.findMany({
-        where,
-        orderBy: [{ testCategory: 'asc' }, { testName: 'asc' }],
+      const [data, total] = await Promise.all([
+        db.labTest.findMany({
+          where,
+          orderBy: [{ testCategory: 'asc' }, { testName: 'asc' }],
+          take: limit,
+          skip: offset,
+        }),
+        db.labTest.count({ where }),
+      ])
+
+      return res.json({
+        success: true,
+        data,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
       })
-      return res.json({ success: true, data })
     }
 
     if (resource === 'orders') {
@@ -106,56 +120,76 @@ export const getAll = async (req, res, next) => {
       if (status) where.status = status
       if (priority) where.priority = priority
 
-      const data = await db.labOrder.findMany({
-        where,
-        include: {
-          patient: {
-            select: {
-              id: true,
-              mrn: true,
-              firstName: true,
-              lastName: true,
-              gender: true,
-              dateOfBirth: true,
-              phonePrimary: true,
+      const [data, total] = await Promise.all([
+        db.labOrder.findMany({
+          where,
+          include: {
+            patient: {
+              select: {
+                id: true,
+                mrn: true,
+                firstName: true,
+                lastName: true,
+                gender: true,
+                dateOfBirth: true,
+                phonePrimary: true,
+              },
+            },
+            results: {
+              include: { test: true },
             },
           },
-          results: {
-            include: { test: true },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        db.labOrder.count({ where }),
+      ])
+
+      return res.json({
+        success: true,
+        data,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
       })
-      return res.json({ success: true, data })
     }
 
     if (resource === 'results') {
       const where = {}
       if (orderId) where.orderId = orderId
 
-      const data = await db.labResult.findMany({
-        where,
-        include: {
-          test: true,
-          order: {
-            include: {
-              patient: {
-                select: {
-                  id: true,
-                  mrn: true,
-                  firstName: true,
-                  lastName: true,
-                  gender: true,
-                  dateOfBirth: true,
-                  phonePrimary: true,
+      const [data, total] = await Promise.all([
+        db.labResult.findMany({
+          where,
+          include: {
+            test: true,
+            order: {
+              include: {
+                patient: {
+                  select: {
+                    id: true,
+                    mrn: true,
+                    firstName: true,
+                    lastName: true,
+                    gender: true,
+                    dateOfBirth: true,
+                    phonePrimary: true,
+                  },
                 },
               },
             },
           },
-        },
-        orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        db.labResult.count({ where }),
+      ])
+
+      return res.json({
+        success: true,
+        data,
+        meta: { total, limit, offset, hasMore: offset + limit < total },
       })
-      return res.json({ success: true, data })
     }
 
     if (resource === 'stats') {

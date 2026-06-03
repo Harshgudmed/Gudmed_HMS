@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import {
   BedDouble, Plus, Edit, Trash2, Search, Eye, RefreshCw, ArrowRight, LogOut,
   AlertCircle, Printer, FileText, ClipboardList, DollarSign, BarChart2,
-  Loader2, Activity, Stethoscope, UserPlus, Building2, User
+  Loader2, Activity, Stethoscope, UserPlus, Building2, User, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -132,6 +132,7 @@ export default function InpatientModule() {
   const [savingBed, setSavingBed] = useState(false)
 
   const [deleteWardConfirm, setDeleteWardConfirm] = useState(null)
+  const [patientHistoryPage, setPatientHistoryPage] = useState(1)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -163,6 +164,10 @@ export default function InpatientModule() {
     const interval = setInterval(fetchAll, 60000)
     return () => clearInterval(interval)
   }, [fetchAll])
+
+  useEffect(() => {
+    setPatientHistoryPage(1)
+  }, [activeTab])
 
   const fetchBedsForWard = async (wardId) => {
     if (!wardId) { setAvailableBeds([]); return }
@@ -1238,63 +1243,87 @@ ${chargesRows}
             {dischargedList.length === 0 ? (
               <Card><CardContent className="py-10 text-center text-gray-400">No discharge records yet</CardContent></Card>
             ) : (
-              <div className="space-y-3">
-                {dischargedList.map(a => {
-                  const days = (a.admissionDate && a.dischargeDate) ? differenceInDays(new Date(a.dischargeDate), new Date(a.admissionDate)) : 0
-                  const initials = (a.patient?.firstName?.[0] || '') + (a.patient?.lastName?.[0] || '')
-                  return (
-                    <Card key={a.id}>
-                      <CardContent className="pt-4 pb-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-700">{initials}</div>
-                            <div>
-                              <div className="font-semibold text-sm">{a.patient?.firstName} {a.patient?.lastName}</div>
-                              <div className="text-xs text-gray-500">{a.patient?.mrn} · {a.patient?.dateOfBirth ? Math.floor(differenceInDays(new Date(), new Date(a.patient.dateOfBirth)) / 365) + 'y' : ''}, {a.patient?.gender}</div>
+              <div>
+                <div className="space-y-3">
+                  {(() => {
+                    const ITEMS_PER_PAGE = 10
+                    const totalPages = Math.ceil(dischargedList.length / ITEMS_PER_PAGE)
+                    const startIdx = (patientHistoryPage - 1) * ITEMS_PER_PAGE
+                    const endIdx = startIdx + ITEMS_PER_PAGE
+                    const paginatedData = dischargedList.slice(startIdx, endIdx)
+                    return paginatedData.map(a => {
+                      const days = (a.admissionDate && a.dischargeDate) ? differenceInDays(new Date(a.dischargeDate), new Date(a.admissionDate)) : 0
+                      const initials = (a.patient?.firstName?.[0] || '') + (a.patient?.lastName?.[0] || '')
+                      return (
+                        <Card key={a.id}>
+                          <CardContent className="pt-4 pb-4">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-700">{initials}</div>
+                                <div>
+                                  <div className="font-semibold text-sm">{a.patient?.firstName} {a.patient?.lastName}</div>
+                                  <div className="text-xs text-gray-500">{a.patient?.mrn} · {a.patient?.dateOfBirth ? Math.floor(differenceInDays(new Date(), new Date(a.patient.dateOfBirth)) / 365) + 'y' : ''}, {a.patient?.gender}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">ADMISSION #</span>
+                                <span className="text-xs font-mono font-medium">{admissionLabel(a)}</span>
+                                <Badge className="bg-green-100 text-green-800 text-xs">Discharged</Badge>
+                                <Button size="sm" variant="ghost" onClick={() => openViewAdmission(a)}><Eye className="h-4 w-4" /><span className="ml-1 text-xs">View</span></Button>
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-400">ADMISSION #</span>
-                            <span className="text-xs font-mono font-medium">{admissionLabel(a)}</span>
-                            <Badge className="bg-green-100 text-green-800 text-xs">Discharged</Badge>
-                            <Button size="sm" variant="ghost" onClick={() => openViewAdmission(a)}><Eye className="h-4 w-4" /><span className="ml-1 text-xs">View</span></Button>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-4 gap-4 text-xs mb-2">
-                          <div>
-                            <div className="text-gray-400 uppercase font-semibold mb-1">Admitted</div>
-                            <div className="font-medium">{a.admissionDate ? format(new Date(a.admissionDate), 'dd MMM yyyy') : '—'}</div>
-                            <div className="text-gray-500">{a.admissionDate ? format(new Date(a.admissionDate), 'HH:mm') : ''}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-400 uppercase font-semibold mb-1">Duration</div>
-                            <div className="font-medium">{days} days</div>
-                            <div className="text-gray-500">{getWardName(wards, a)}/{a.bed?.bedNumber || '—'}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-400 uppercase font-semibold mb-1">Admission Type</div>
-                            <Badge className={`text-xs ${a.admissionType === 'Emergency' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>{a.admissionType}</Badge>
-                          </div>
-                          <div>
-                            <div className="text-gray-400 uppercase font-semibold mb-1">Bill</div>
-                            <div className="text-gray-500">—</div>
-                          </div>
-                        </div>
-                        {a.admissionDiagnosis && (
-                          <div>
-                            <div className="text-xs text-gray-400 uppercase font-semibold mb-1">Admission Diagnosis</div>
-                            <div className="text-sm">{a.admissionDiagnosis}</div>
-                          </div>
-                        )}
-                        <div className="flex justify-end mt-2">
-                          <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => handlePrintDischargeSummary(a)}>
-                            <Printer className="h-3.5 w-3.5" />Print Summary
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                            <div className="grid grid-cols-4 gap-4 text-xs mb-2">
+                              <div>
+                                <div className="text-gray-400 uppercase font-semibold mb-1">Admitted</div>
+                                <div className="font-medium">{a.admissionDate ? format(new Date(a.admissionDate), 'dd MMM yyyy') : '—'}</div>
+                                <div className="text-gray-500">{a.admissionDate ? format(new Date(a.admissionDate), 'HH:mm') : ''}</div>
+                              </div>
+                              <div>
+                                <div className="text-gray-400 uppercase font-semibold mb-1">Duration</div>
+                                <div className="font-medium">{days} days</div>
+                                <div className="text-gray-500">{getWardName(wards, a)}/{a.bed?.bedNumber || '—'}</div>
+                              </div>
+                              <div>
+                                <div className="text-gray-400 uppercase font-semibold mb-1">Admission Type</div>
+                                <Badge className={`text-xs ${a.admissionType === 'Emergency' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>{a.admissionType}</Badge>
+                              </div>
+                              <div>
+                                <div className="text-gray-400 uppercase font-semibold mb-1">Bill</div>
+                                <div className="text-gray-500">—</div>
+                              </div>
+                            </div>
+                            {a.admissionDiagnosis && (
+                              <div>
+                                <div className="text-xs text-gray-400 uppercase font-semibold mb-1">Admission Diagnosis</div>
+                                <div className="text-sm">{a.admissionDiagnosis}</div>
+                              </div>
+                            )}
+                            <div className="flex justify-end mt-2">
+                              <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => handlePrintDischargeSummary(a)}>
+                                <Printer className="h-3.5 w-3.5" />Print Summary
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })
+                  })()}
+                </div>
+                {dischargedList.length > 10 && (() => {
+                  const ITEMS_PER_PAGE = 10
+                  const totalPages = Math.ceil(dischargedList.length / ITEMS_PER_PAGE)
+                  return (
+                    <div className="flex items-center justify-end gap-2 p-4 border-t mt-4">
+                      <Button variant="outline" size="sm" onClick={() => setPatientHistoryPage(p => Math.max(1, p - 1))} disabled={patientHistoryPage === 1}>
+                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                      </Button>
+                      <span className="text-sm text-gray-600">Page {patientHistoryPage} of {totalPages}</span>
+                      <Button variant="outline" size="sm" onClick={() => setPatientHistoryPage(p => Math.min(totalPages, p + 1))} disabled={patientHistoryPage === totalPages}>
+                        Next<ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
                   )
-                })}
+                })()}
               </div>
             )}
           </div>
