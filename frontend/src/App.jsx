@@ -103,12 +103,12 @@ export default function App() {
         <NavLink
           to="/"
           end
-          title={HOSPITAL_NAME}
+          title={hospitalName}
           className={`flex items-center gap-3 px-4 py-4 border-b transition-colors hover:opacity-90 ${colored && !light ? 'border-white/20' : 'border-gray-200'}`}
         >
           <Logo size={44} />
           <span className={`text-sm font-bold leading-tight ${colored && !light ? 'text-white' : 'text-blue-700'}`}>
-            {HOSPITAL_NAME}
+            {hospitalName}
           </span>
         </NavLink>
         <nav className="flex-1 py-4 space-y-1 px-2">
