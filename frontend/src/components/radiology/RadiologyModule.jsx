@@ -110,6 +110,11 @@ export default function RadiologyModule() {
   const [ordersPage, setOrdersPage] = useState(1)
   const [reportsPage, setReportsPage] = useState(1)
 
+  // Pagination metadata from backend
+  const [examsMeta, setExamsMeta] = useState({ total: 0, limit: 10, offset: 0 })
+  const [ordersMeta, setOrdersMeta] = useState({ total: 0, limit: 10, offset: 0 })
+  const [reportsMeta, setReportsMeta] = useState({ total: 0, limit: 10, offset: 0 })
+
   // Exam dialog
   const [showExamDialog, setShowExamDialog] = useState(false)
   const [examForm, setExamForm] = useState(emptyExam)
@@ -160,10 +165,19 @@ export default function RadiologyModule() {
         client.get('/patients'),
         client.get(`/radiology?resource=reports&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(reportsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
       ])
-      if (eRes.success) setExams(eRes.data || [])
-      if (oRes.success) setOrders(oRes.data || [])
+      if (eRes.success) {
+        setExams(eRes.data || [])
+        if (eRes.meta) setExamsMeta(eRes.meta)
+      }
+      if (oRes.success) {
+        setOrders(oRes.data || [])
+        if (oRes.meta) setOrdersMeta(oRes.meta)
+      }
       if (pRes.success) setPatients(pRes.data || [])
-      if (rRes.success) setReports(rRes.data || [])
+      if (rRes.success) {
+        setReports(rRes.data || [])
+        if (rRes.meta) setReportsMeta(rRes.meta)
+      }
     } catch { /* silent */ }
     setLoading(false)
   }, [examsPage, ordersPage, reportsPage])
@@ -768,14 +782,14 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
             </Table>
           </CardContent></Card>
 
-          {filteredOrders.length > RADIOLOGY_ITEMS_PER_PAGE && (
+          {ordersMeta.total > RADIOLOGY_ITEMS_PER_PAGE && (
             <div className="border-t pt-4 flex items-center justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => Math.max(1, p - 1))} disabled={ordersPage === 1}>
-                Previous
+                <ChevronLeft className="h-4 w-4 mr-1" />Previous
               </Button>
-              <span className="text-sm text-gray-500">Page {ordersPage} of {Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
-              <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => p + 1)} disabled={ordersPage >= Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}>
-                Next
+              <span className="text-sm text-gray-500">Page {ordersPage} of {Math.ceil(ordersMeta.total / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+              <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => p + 1)} disabled={!ordersMeta.hasMore}>
+                Next<ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           )}
@@ -855,14 +869,14 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
             </Table>
           </CardContent></Card>
 
-          {filteredExams.length > RADIOLOGY_ITEMS_PER_PAGE && (
+          {examsMeta.total > RADIOLOGY_ITEMS_PER_PAGE && (
             <div className="border-t pt-4 flex items-center justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setExamsPage(p => Math.max(1, p - 1))} disabled={examsPage === 1}>
-                Previous
+                <ChevronLeft className="h-4 w-4 mr-1" />Previous
               </Button>
-              <span className="text-sm text-gray-500">Page {examsPage} of {Math.ceil(filteredExams.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
-              <Button variant="outline" size="sm" onClick={() => setExamsPage(p => p + 1)} disabled={examsPage >= Math.ceil(filteredExams.length / RADIOLOGY_ITEMS_PER_PAGE)}>
-                Next
+              <span className="text-sm text-gray-500">Page {examsPage} of {Math.ceil(examsMeta.total / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+              <Button variant="outline" size="sm" onClick={() => setExamsPage(p => p + 1)} disabled={!examsMeta.hasMore}>
+                Next<ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           )}
@@ -919,14 +933,14 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
             </Table>
           </CardContent></Card>
 
-          {reports.length > RADIOLOGY_ITEMS_PER_PAGE && (
+          {reportsMeta.total > RADIOLOGY_ITEMS_PER_PAGE && (
             <div className="border-t pt-4 flex items-center justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setReportsPage(p => Math.max(1, p - 1))} disabled={reportsPage === 1}>
-                Previous
+                <ChevronLeft className="h-4 w-4 mr-1" />Previous
               </Button>
-              <span className="text-sm text-gray-500">Page {reportsPage} of {Math.ceil(reports.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
-              <Button variant="outline" size="sm" onClick={() => setReportsPage(p => p + 1)} disabled={reportsPage >= Math.ceil(reports.length / RADIOLOGY_ITEMS_PER_PAGE)}>
-                Next
+              <span className="text-sm text-gray-500">Page {reportsPage} of {Math.ceil(reportsMeta.total / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+              <Button variant="outline" size="sm" onClick={() => setReportsPage(p => p + 1)} disabled={!reportsMeta.hasMore}>
+                Next<ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           )}
@@ -988,14 +1002,14 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
           </Table>
         </CardContent></Card>
 
-        {filteredOrders.length > RADIOLOGY_ITEMS_PER_PAGE && (
+        {ordersMeta.total > RADIOLOGY_ITEMS_PER_PAGE && (
           <div className="border-t pt-4 flex items-center justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => Math.max(1, p - 1))} disabled={ordersPage === 1}>
-              Previous
+              <ChevronLeft className="h-4 w-4 mr-1" />Previous
             </Button>
-            <span className="text-sm text-gray-500">Page {ordersPage} of {Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}</span>
-            <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => p + 1)} disabled={ordersPage >= Math.ceil(filteredOrders.length / RADIOLOGY_ITEMS_PER_PAGE)}>
-              Next
+            <span className="text-sm text-gray-500">Page {ordersPage} of {Math.ceil(ordersMeta.total / RADIOLOGY_ITEMS_PER_PAGE)}</span>
+            <Button variant="outline" size="sm" onClick={() => setOrdersPage(p => p + 1)} disabled={!ordersMeta.hasMore}>
+              Next<ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           </div>
         )}
