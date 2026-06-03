@@ -1642,9 +1642,9 @@ export default function PharmacyModule() {
                   })()}
                 </TableBody>
               </Table>
-              {batches.length > PHARMACY_BATCHES_PER_PAGE && (() => {
+              {(() => {
                 const totalPages = Math.ceil(batches.length / PHARMACY_BATCHES_PER_PAGE);
-                return (
+                return totalPages > 1 ? (
                   <div className="flex items-center justify-end gap-2 p-4 border-t">
                     <Button
                       variant="outline"
@@ -1668,7 +1668,7 @@ export default function PharmacyModule() {
                       <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                   </div>
-                );
+                ) : null;
               })()}
             </CardContent>
           </Card>
@@ -1818,9 +1818,9 @@ export default function PharmacyModule() {
                   })()}
                 </TableBody>
               </Table>
-              {filteredPOs.length > PHARMACY_PO_PER_PAGE && (() => {
+              {(() => {
                 const totalPages = Math.ceil(filteredPOs.length / PHARMACY_PO_PER_PAGE);
-                return (
+                return totalPages > 1 ? (
                   <div className="flex items-center justify-end gap-2 p-4 border-t">
                     <Button
                       variant="outline"
@@ -1844,7 +1844,7 @@ export default function PharmacyModule() {
                       <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                   </div>
-                );
+                ) : null;
               })()}
             </CardContent>
           </Card>
@@ -1943,9 +1943,9 @@ export default function PharmacyModule() {
                   })()}
                 </TableBody>
               </Table>
-              {filteredSales.length > PHARMACY_SALES_PER_PAGE && (() => {
+              {(() => {
                 const totalPages = Math.ceil(filteredSales.length / PHARMACY_SALES_PER_PAGE);
-                return (
+                return totalPages > 1 ? (
                   <div className="flex items-center justify-end gap-2 p-4 border-t">
                     <Button
                       variant="outline"
@@ -1969,7 +1969,7 @@ export default function PharmacyModule() {
                       <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                   </div>
-                );
+                ) : null;
               })()}
             </CardContent>
           </Card>
