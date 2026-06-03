@@ -23,7 +23,7 @@ import client from '@/api/client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const RADIOLOGY_ITEMS_PER_PAGE = 10
+const RADIOLOGY_ITEMS_PER_PAGE = 15
 const EXAM_CATEGORIES = ['x-ray', 'ct', 'mri', 'ultrasound', 'mammography']
 const URGENCY_LEVELS = ['routine', 'urgent', 'stat']
 const REPORT_TEMPLATES = [
