@@ -5,7 +5,7 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
   Scan, Plus, Edit, Trash2, Search, Eye, CheckCircle, XCircle,
-  RefreshCw, FileText, Printer, AlertTriangle, Upload, X,
+  RefreshCw, FileText, Printer, AlertTriangle, Upload, X, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
