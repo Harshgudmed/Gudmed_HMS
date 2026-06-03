@@ -63,6 +63,7 @@ function SetupTab() {
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState({ commissionType: 'percentage', commissionRate: '10', isActive: true, notes: '' })
   const [saving, setSaving] = useState(false)
+  const [setupPage, setSetupPage] = useState(1)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -72,6 +73,10 @@ function SetupTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    setSetupPage(1)
+  }, [search])
 
   function openConfig(doc) {
     setSelected(doc)
@@ -120,46 +125,70 @@ function SetupTab() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400">No doctors found. Add doctors in Settings → Users first.</div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Doctor</TableHead>
-              <TableHead>Specialization</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Commission Rate</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map(doc => (
-              <TableRow key={doc.id}>
-                <TableCell className="font-medium">{doc.fullName}</TableCell>
-                <TableCell className="text-gray-500">{doc.specialization || '—'}</TableCell>
-                <TableCell className="text-gray-500">{doc.department?.name || '—'}</TableCell>
-                <TableCell>
-                  {doc.commissionConfig
-                    ? doc.commissionConfig.commissionType === 'percentage'
-                      ? `${doc.commissionConfig.commissionRate}%`
-                      : fmt(doc.commissionConfig.commissionRate)
-                    : <span className="text-gray-400 italic">Not set</span>}
-                </TableCell>
-                <TableCell>
-                  {doc.commissionConfig ? (
-                    <Badge variant={doc.commissionConfig.isActive ? 'default' : 'secondary'}>
-                      {doc.commissionConfig.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  ) : <Badge variant="outline" className="text-gray-400">No Config</Badge>}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button size="sm" variant="outline" onClick={() => openConfig(doc)}>
-                    <Edit2 className="h-3.5 w-3.5 mr-1" />{doc.commissionConfig ? 'Edit' : 'Set Up'}
-                  </Button>
-                </TableCell>
+        <div className="border rounded-lg">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Doctor</TableHead>
+                <TableHead>Specialization</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Commission Rate</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(() => {
+                const ITEMS_PER_PAGE = 10
+                const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+                const startIdx = (setupPage - 1) * ITEMS_PER_PAGE
+                const endIdx = startIdx + ITEMS_PER_PAGE
+                const paginatedData = filtered.slice(startIdx, endIdx)
+                return paginatedData.map(doc => (
+                  <TableRow key={doc.id}>
+                    <TableCell className="font-medium">{doc.fullName}</TableCell>
+                    <TableCell className="text-gray-500">{doc.specialization || '—'}</TableCell>
+                    <TableCell className="text-gray-500">{doc.department?.name || '—'}</TableCell>
+                    <TableCell>
+                      {doc.commissionConfig
+                        ? doc.commissionConfig.commissionType === 'percentage'
+                          ? `${doc.commissionConfig.commissionRate}%`
+                          : fmt(doc.commissionConfig.commissionRate)
+                        : <span className="text-gray-400 italic">Not set</span>}
+                    </TableCell>
+                    <TableCell>
+                      {doc.commissionConfig ? (
+                        <Badge variant={doc.commissionConfig.isActive ? 'default' : 'secondary'}>
+                          {doc.commissionConfig.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      ) : <Badge variant="outline" className="text-gray-400">No Config</Badge>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="outline" onClick={() => openConfig(doc)}>
+                        <Edit2 className="h-3.5 w-3.5 mr-1" />{doc.commissionConfig ? 'Edit' : 'Set Up'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              })()}
+            </TableBody>
+          </Table>
+          {filtered.length > 10 && (() => {
+            const ITEMS_PER_PAGE = 10
+            const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+            return (
+              <div className="flex items-center justify-end gap-2 p-4 border-t bg-gray-50">
+                <Button variant="outline" size="sm" onClick={() => setSetupPage(p => Math.max(1, p - 1))} disabled={setupPage === 1}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
+                </Button>
+                <span className="text-sm text-gray-600">Page {setupPage} of {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setSetupPage(p => Math.min(totalPages, p + 1))} disabled={setupPage === totalPages}>
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )
+          })()}
+        </div>
       )}
       <Dialog open={configDialog} onOpenChange={setConfigDialog}>
         <DialogContent className="max-w-md">
