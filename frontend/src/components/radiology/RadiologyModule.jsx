@@ -1036,8 +1036,8 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
           <Card>
             <CardContent className="pt-5">
               <p className="text-sm text-gray-500 mb-1">Exam Catalog</p>
-              <p className="text-3xl font-bold text-purple-600">{exams.length}</p>
-              <p className="text-xs text-gray-400 mt-1">{exams.filter(e => e.isActive).length} active</p>
+              <p className="text-3xl font-bold text-purple-600">{stats.totalExams || 0}</p>
+              <p className="text-xs text-gray-400 mt-1">{stats.totalExams || 0} active</p>
             </CardContent>
           </Card>
         </div>
