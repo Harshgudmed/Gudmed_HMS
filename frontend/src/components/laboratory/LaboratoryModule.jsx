@@ -344,8 +344,9 @@ export default function LaboratoryModule() {
   const fetchTests = useCallback(async () => {
     try {
       setTestsLoading(true)
-      const data = await fetchApi('/laboratory?resource=tests')
-      setTests(data.map(transformApiTest))
+      const data = await fetchApi('/laboratory?resource=tests&limit=500')
+      const testsArray = Array.isArray(data) ? data : (data?.data || [])
+      setTests(testsArray.map(transformApiTest))
     } catch (error) {
       console.error('Failed to fetch tests:', error)
       toast.error(error.message || 'Failed to load test catalog')
@@ -358,8 +359,9 @@ export default function LaboratoryModule() {
   const fetchOrders = useCallback(async () => {
     try {
       setOrdersLoading(true)
-      const data = await fetchApi('/laboratory?resource=orders')
-      setOrders(data.map(transformApiOrder))
+      const data = await fetchApi('/laboratory?resource=orders&limit=500')
+      const ordersArray = Array.isArray(data) ? data : (data?.data || [])
+      setOrders(ordersArray.map(transformApiOrder))
     } catch (error) {
       console.error('Failed to fetch orders:', error)
       toast.error(error.message || 'Failed to load lab orders')
@@ -392,8 +394,9 @@ export default function LaboratoryModule() {
   // Fetch results
   const fetchResults = useCallback(async () => {
     try {
-      const data = await fetchApi('/laboratory?resource=results')
-      setResults(data.map(transformApiResult))
+      const data = await fetchApi('/laboratory?resource=results&limit=500')
+      const resultsArray = Array.isArray(data) ? data : (data?.data || [])
+      setResults(resultsArray.map(transformApiResult))
     } catch (error) {
       console.error('Failed to fetch results:', error)
       toast.error(error.message || 'Failed to load lab results')
