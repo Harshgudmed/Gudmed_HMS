@@ -149,7 +149,7 @@ export default function DashboardModule() {
 
       {/* Primary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all" onClick={() => navigate('/patients')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Patients</CardTitle>
             <Users className="h-5 w-5 text-blue-600" />
@@ -162,7 +162,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-purple-300 transition-all" onClick={() => navigate('/queue')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Today's Appointments</CardTitle>
             <Calendar className="h-5 w-5 text-purple-600" />
@@ -173,7 +173,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-orange-300 transition-all" onClick={() => navigate('/triage')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Queue Waiting</CardTitle>
             <Clock className="h-5 w-5 text-orange-600" />
@@ -184,7 +184,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-green-300 transition-all" onClick={() => navigate('/billing')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Today's Revenue</CardTitle>
             <DollarSign className="h-5 w-5 text-green-600" />
@@ -200,7 +200,7 @@ export default function DashboardModule() {
 
       {/* Secondary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-cyan-300 transition-all" onClick={() => navigate('/laboratory')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Pending Lab Orders</CardTitle>
             <FlaskConical className="h-5 w-5 text-cyan-600" />
@@ -211,7 +211,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-pink-300 transition-all" onClick={() => navigate('/pharmacy')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Pending Prescriptions</CardTitle>
             <Pill className="h-5 w-5 text-pink-600" />
@@ -222,7 +222,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-indigo-300 transition-all" onClick={() => navigate('/inpatient')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Bed Occupancy</CardTitle>
             <BedDouble className="h-5 w-5 text-indigo-600" />
@@ -233,7 +233,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-red-300 transition-all" onClick={() => navigate('/consultations')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Critical Alerts</CardTitle>
             <AlertCircle className="h-5 w-5 text-red-600" />
