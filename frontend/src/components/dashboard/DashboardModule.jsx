@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getOrgSettings } from '@/lib/orgSettings'
+import { useOrgSettings } from '@/lib/useOrgSettings'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
@@ -70,8 +70,8 @@ const emptyPatientForm = {
 
 export default function DashboardModule() {
   const navigate = useNavigate()
+  const { orgInfo } = useOrgSettings() // Now automatically updates when settings change
   const [data, setData] = useState(null)
-  const [orgInfo, setOrgInfo] = useState({ name: 'Hospital', address: '', city: '', phone: '', email: '' })
   const [loading, setLoading] = useState(true)
   const [showNewPatient, setShowNewPatient] = useState(false)
   const [patientForm, setPatientForm] = useState(emptyPatientForm)
@@ -90,7 +90,6 @@ export default function DashboardModule() {
   }, [])
 
   useEffect(() => { fetchDashboard() }, [fetchDashboard])
-  useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
 
   const stats = data?.stats || {}
   const queue = data?.queue || []

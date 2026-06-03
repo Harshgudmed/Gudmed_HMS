@@ -177,6 +177,7 @@ export default function SettingsModule() {
           headerColor: orgForm.moduleHeaderColor,
           hospitalName: orgForm.name,
         }}))
+        window.dispatchEvent(new CustomEvent('organizationSettingsChange', { detail: orgForm }))
       } else toast.error(res.error || 'Failed to save')
     } catch { toast.error('Failed to save organization settings') }
     finally { setSavingOrg(false) }
