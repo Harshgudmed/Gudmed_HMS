@@ -246,6 +246,12 @@ const formatStatus = (status) => {
 }
 
 // ============================================
+// CONSTANTS
+// ============================================
+
+const LAB_ITEMS_PER_PAGE = 10
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -283,6 +289,13 @@ export default function LaboratoryModule() {
     criticalResults: 0,
     totalTests: 0
   })
+
+  // Pagination state for tests catalog
+  const [testsPage, setTestsPage] = useState(1)
+  // Pagination state for orders
+  const [ordersPage, setOrdersPage] = useState(1)
+  // Pagination state for results
+  const [resultsPage, setResultsPage] = useState(1)
 
   // Forms
   const testForm = useForm({
@@ -1312,10 +1325,16 @@ tbody tr:hover{background:#f9fafb}
                       placeholder="Search tests..."
                       className="pl-10 w-64"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value)
+                        setTestsPage(1)
+                      }}
                     />
                   </div>
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <Select value={categoryFilter} onValueChange={(value) => {
+                    setCategoryFilter(value)
+                    setTestsPage(1)
+                  }}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Category" />
                     </SelectTrigger>
@@ -1334,108 +1353,135 @@ tbody tr:hover{background:#f9fafb}
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {testsLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Test Name</TableHead>
-                        <TableHead>Code</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Sample Type</TableHead>
-                        <TableHead>TAT (hrs)</TableHead>
-                        <TableHead>Price (&#8377;)</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="w-24">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredTests.length === 0 ? (
+                <>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                            No tests found. Add a test to get started.
-                          </TableCell>
+                          <TableHead>Test Name</TableHead>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Sample Type</TableHead>
+                          <TableHead>TAT (hrs)</TableHead>
+                          <TableHead>Price (&#8377;)</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-24">Actions</TableHead>
                         </TableRow>
-                      ) : (
-                        filteredTests.map((test) => (
-                          <TableRow key={test.id} className="hover:bg-gray-50">
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {getSampleTypeIcon(test.specimenType)}
-                                <div>
-                                  <p className="font-medium">{test.testName}</p>
-                                  <p className="text-xs text-gray-500">{test.specimenContainer || 'No container specified'}</p>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="font-mono">{test.testCode}</TableCell>
-                            <TableCell>
-                              <Badge className={getCategoryBadgeColor(test.testCategory)} variant="outline">
-                                {test.testCategory}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                {getSampleTypeIcon(test.specimenType)}
-                                <span className="text-sm">{test.specimenType}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>{test.turnaroundTime}</TableCell>
-                            <TableCell className="font-medium">{test.price?.toLocaleString() || '0'}</TableCell>
-                            <TableCell>
-                              <Badge className={test.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                                {test.isActive ? 'Active' : 'Inactive'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedTest(test)
-                                    testForm.reset({
-                                      testName: test.testName,
-                                      testCode: test.testCode,
-                                      testCategory: test.testCategory,
-                                      testType: test.testType,
-                                      specimenType: test.specimenType,
-                                      specimenVolume: test.specimenVolume,
-                                      specimenContainer: test.specimenContainer,
-                                      unit: test.unit,
-                                      price: test.price,
-                                      turnaroundTime: test.turnaroundTime,
-                                      department: test.department,
-                                      preparationInstructions: test.preparationInstructions,
-                                      clinicalSignificance: test.clinicalSignificance,
-                                      isActive: test.isActive
-                                    })
-                                    setShowTestDialog(true)
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-red-500 hover:text-red-700"
-                                  onClick={() => handleDeleteTest(test.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTests.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                              No tests found. Add a test to get started.
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        ) : (
+                          filteredTests.slice((testsPage - 1) * LAB_ITEMS_PER_PAGE, testsPage * LAB_ITEMS_PER_PAGE).map((test) => (
+                            <TableRow key={test.id} className="hover:bg-gray-50">
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  {getSampleTypeIcon(test.specimenType)}
+                                  <div>
+                                    <p className="font-medium">{test.testName}</p>
+                                    <p className="text-xs text-gray-500">{test.specimenContainer || 'No container specified'}</p>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono">{test.testCode}</TableCell>
+                              <TableCell>
+                                <Badge className={getCategoryBadgeColor(test.testCategory)} variant="outline">
+                                  {test.testCategory}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  {getSampleTypeIcon(test.specimenType)}
+                                  <span className="text-sm">{test.specimenType}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>{test.turnaroundTime}</TableCell>
+                              <TableCell className="font-medium">{test.price?.toLocaleString() || '0'}</TableCell>
+                              <TableCell>
+                                <Badge className={test.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                                  {test.isActive ? 'Active' : 'Inactive'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setSelectedTest(test)
+                                      testForm.reset({
+                                        testName: test.testName,
+                                        testCode: test.testCode,
+                                        testCategory: test.testCategory,
+                                        testType: test.testType,
+                                        specimenType: test.specimenType,
+                                        specimenVolume: test.specimenVolume,
+                                        specimenContainer: test.specimenContainer,
+                                        unit: test.unit,
+                                        price: test.price,
+                                        turnaroundTime: test.turnaroundTime,
+                                        department: test.department,
+                                        preparationInstructions: test.preparationInstructions,
+                                        clinicalSignificance: test.clinicalSignificance,
+                                        isActive: test.isActive
+                                      })
+                                      setShowTestDialog(true)
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-red-500 hover:text-red-700"
+                                    onClick={() => handleDeleteTest(test.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination controls for tests */}
+                  {filteredTests.length > LAB_ITEMS_PER_PAGE && (
+                    <div className="flex items-center justify-end gap-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTestsPage(prev => Math.max(1, prev - 1))}
+                        disabled={testsPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-600">
+                        Page {testsPage} of {Math.ceil(filteredTests.length / LAB_ITEMS_PER_PAGE)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTestsPage(prev => Math.min(Math.ceil(filteredTests.length / LAB_ITEMS_PER_PAGE), prev + 1))}
+                        disabled={testsPage === Math.ceil(filteredTests.length / LAB_ITEMS_PER_PAGE)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -1453,10 +1499,16 @@ tbody tr:hover{background:#f9fafb}
                       placeholder="Search by patient, UHID, order #..."
                       className="pl-10 w-64"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value)
+                        setOrdersPage(1)
+                      }}
                     />
                   </div>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <Select value={statusFilter} onValueChange={(value) => {
+                    setStatusFilter(value)
+                    setOrdersPage(1)
+                  }}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
@@ -1469,7 +1521,10 @@ tbody tr:hover{background:#f9fafb}
                       <SelectItem value="cancelled">Cancelled</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                  <Select value={priorityFilter} onValueChange={(value) => {
+                    setPriorityFilter(value)
+                    setOrdersPage(1)
+                  }}>
                     <SelectTrigger className="w-32">
                       <SelectValue placeholder="Priority" />
                     </SelectTrigger>
@@ -1487,146 +1542,173 @@ tbody tr:hover{background:#f9fafb}
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {ordersLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-32">Order #</TableHead>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Tests</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Order Time</TableHead>
-                        <TableHead className="w-40">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredOrders.length === 0 ? (
+                <>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                            No orders found. Create a new order to get started.
-                          </TableCell>
+                          <TableHead className="w-32">Order #</TableHead>
+                          <TableHead>Patient</TableHead>
+                          <TableHead>Tests</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Order Time</TableHead>
+                          <TableHead className="w-40">Actions</TableHead>
                         </TableRow>
-                      ) : (
-                        filteredOrders.map((order) => (
-                          <TableRow key={order.id} className="hover:bg-gray-50">
-                            <TableCell className="font-mono text-sm">{order.orderNumber}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarFallback className="bg-blue-100 text-blue-700">
-                                    {order.patientName.split(' ').map(n => n[0]).join('')}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-medium">{order.patientName}</p>
-                                  <p className="text-xs text-gray-500">{order.patientMrn}</p>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredOrders.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                              No orders found. Create a new order to get started.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredOrders.slice((ordersPage - 1) * LAB_ITEMS_PER_PAGE, ordersPage * LAB_ITEMS_PER_PAGE).map((order) => (
+                            <TableRow key={order.id} className="hover:bg-gray-50">
+                              <TableCell className="font-mono text-sm">{order.orderNumber}</TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarFallback className="bg-blue-100 text-blue-700">
+                                      {order.patientName.split(' ').map(n => n[0]).join('')}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="font-medium">{order.patientName}</p>
+                                    <p className="text-xs text-gray-500">{order.patientMrn}</p>
+                                  </div>
                                 </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-wrap gap-1">
-                                {order.tests.slice(0, 2).map((test, idx) => (
-                                  <Badge key={idx} className={getCategoryBadgeColor(test.testCategory)} variant="outline">
-                                    {test.testCode || test.testName.substring(0, 4)}
-                                  </Badge>
-                                ))}
-                                {order.tests.length > 2 && (
-                                  <Badge variant="outline">+{order.tests.length - 2}</Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={getPriorityBadgeColor(order.priority)}>
-                                {order.priority.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={getStatusBadgeColor(order.status)} variant="outline">
-                                {formatStatus(order.status)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              <span>{format(new Date(order.orderDate), 'dd MMM yyyy')}</span>
-                              <p className="text-xs text-gray-500">{format(new Date(order.orderDate), 'HH:mm')}</p>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedOrder(order)
-                                    setShowViewOrderDialog(true)
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                {order.status === 'pending' && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleCollectSample(order.id)}
-                                  >
-                                    <TestTube className="h-4 w-4 mr-1" />
-                                    Collect
-                                  </Button>
-                                )}
-                                {order.status === 'sample_collected' && (
-                                  <Button
-                                    size="sm"
-                                    variant="default"
-                                    onClick={() => handleStartProcessing(order.id)}
-                                  >
-                                    <Play className="h-4 w-4 mr-1" />
-                                    Process
-                                  </Button>
-                                )}
-                                {order.status === 'in_progress' && (
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => {
-                                      setSelectedOrder(order)
-                                      setActiveTab('results')
-                                    }}
-                                  >
-                                    <FileText className="h-4 w-4 mr-1" />
-                                    Results
-                                  </Button>
-                                )}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  title="Print Invoice"
-                                  onClick={() => handlePrintLabInvoice(order)}
-                                >
-                                  <Receipt className="h-4 w-4" />
-                                </Button>
-                                {order.status === 'completed' && (
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {order.tests.slice(0, 2).map((test, idx) => (
+                                    <Badge key={idx} className={getCategoryBadgeColor(test.testCategory)} variant="outline">
+                                      {test.testCode || test.testName.substring(0, 4)}
+                                    </Badge>
+                                  ))}
+                                  {order.tests.length > 2 && (
+                                    <Badge variant="outline">+{order.tests.length - 2}</Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={getPriorityBadgeColor(order.priority)}>
+                                  {order.priority.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={getStatusBadgeColor(order.status)} variant="outline">
+                                  {formatStatus(order.status)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                <span>{format(new Date(order.orderDate), 'dd MMM yyyy')}</span>
+                                <p className="text-xs text-gray-500">{format(new Date(order.orderDate), 'HH:mm')}</p>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    title="Print Lab Report"
-                                    onClick={() => handlePrintLabReport(order)}
+                                    onClick={() => {
+                                      setSelectedOrder(order)
+                                      setShowViewOrderDialog(true)
+                                    }}
                                   >
-                                    <Printer className="h-4 w-4" />
+                                    <Eye className="h-4 w-4" />
                                   </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                                  {order.status === 'pending' && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleCollectSample(order.id)}
+                                    >
+                                      <TestTube className="h-4 w-4 mr-1" />
+                                      Collect
+                                    </Button>
+                                  )}
+                                  {order.status === 'sample_collected' && (
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      onClick={() => handleStartProcessing(order.id)}
+                                    >
+                                      <Play className="h-4 w-4 mr-1" />
+                                      Process
+                                    </Button>
+                                  )}
+                                  {order.status === 'in_progress' && (
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => {
+                                        setSelectedOrder(order)
+                                        setActiveTab('results')
+                                      }}
+                                    >
+                                      <FileText className="h-4 w-4 mr-1" />
+                                      Results
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    title="Print Invoice"
+                                    onClick={() => handlePrintLabInvoice(order)}
+                                  >
+                                    <Receipt className="h-4 w-4" />
+                                  </Button>
+                                  {order.status === 'completed' && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      title="Print Lab Report"
+                                      onClick={() => handlePrintLabReport(order)}
+                                    >
+                                      <Printer className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination controls for orders */}
+                  {filteredOrders.length > LAB_ITEMS_PER_PAGE && (
+                    <div className="flex items-center justify-end gap-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOrdersPage(prev => Math.max(1, prev - 1))}
+                        disabled={ordersPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-600">
+                        Page {ordersPage} of {Math.ceil(filteredOrders.length / LAB_ITEMS_PER_PAGE)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOrdersPage(prev => Math.min(Math.ceil(filteredOrders.length / LAB_ITEMS_PER_PAGE), prev + 1))}
+                        disabled={ordersPage === Math.ceil(filteredOrders.length / LAB_ITEMS_PER_PAGE)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -1657,8 +1739,8 @@ tbody tr:hover{background:#f9fafb}
                 <CardTitle>Select Order</CardTitle>
                 <CardDescription>Choose an order to enter results</CardDescription>
               </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[500px]">
+              <CardContent className="space-y-4">
+                <ScrollArea className="h-[400px]">
                   {ordersLoading ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -1667,7 +1749,7 @@ tbody tr:hover{background:#f9fafb}
                     <p className="text-center text-gray-500 py-8">No orders ready for results</p>
                   ) : (
                     <div className="space-y-2">
-                      {orders.filter(o => o.status === 'in_progress' || o.status === 'sample_collected').map(order => (
+                      {orders.filter(o => o.status === 'in_progress' || o.status === 'sample_collected').slice((resultsPage - 1) * LAB_ITEMS_PER_PAGE, resultsPage * LAB_ITEMS_PER_PAGE).map(order => (
                         <div
                           key={order.id}
                           className={`p-3 rounded-lg border cursor-pointer transition ${selectedOrder?.id === order.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
@@ -1687,6 +1769,31 @@ tbody tr:hover{background:#f9fafb}
                     </div>
                   )}
                 </ScrollArea>
+
+                {/* Pagination for results orders selection */}
+                {orders.filter(o => o.status === 'in_progress' || o.status === 'sample_collected').length > LAB_ITEMS_PER_PAGE && (
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setResultsPage(prev => Math.max(1, prev - 1))}
+                      disabled={resultsPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-xs text-gray-600">
+                      Page {resultsPage} of {Math.ceil(orders.filter(o => o.status === 'in_progress' || o.status === 'sample_collected').length / LAB_ITEMS_PER_PAGE)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setResultsPage(prev => Math.min(Math.ceil(orders.filter(o => o.status === 'in_progress' || o.status === 'sample_collected').length / LAB_ITEMS_PER_PAGE), prev + 1))}
+                      disabled={resultsPage === Math.ceil(orders.filter(o => o.status === 'in_progress' || o.status === 'sample_collected').length / LAB_ITEMS_PER_PAGE)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
