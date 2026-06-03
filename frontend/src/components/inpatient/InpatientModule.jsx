@@ -1309,10 +1309,10 @@ ${chargesRows}
                     })
                   })()}
                 </div>
-                {dischargedList.length > 10 && (() => {
+                {(() => {
                   const ITEMS_PER_PAGE = 10
                   const totalPages = Math.ceil(dischargedList.length / ITEMS_PER_PAGE)
-                  return (
+                  return totalPages > 1 ? (
                     <div className="flex items-center justify-end gap-2 p-4 border-t mt-4">
                       <Button variant="outline" size="sm" onClick={() => setPatientHistoryPage(p => Math.max(1, p - 1))} disabled={patientHistoryPage === 1}>
                         <ChevronLeft className="h-4 w-4 mr-1" />Previous
@@ -1322,7 +1322,7 @@ ${chargesRows}
                         Next<ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </div>
-                  )
+                  ) : null
                 })()}
               </div>
             )}
