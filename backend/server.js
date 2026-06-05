@@ -19,8 +19,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',          // local dev
   'http://localhost:4173',          // local preview (npm run preview)
   'https://gudmed.vercel.app',      // production (old URL)
-  'https://frontend-sigma-gray-63.vercel.app',  // new production frontend
-  'https://frontend-49efa18nl-harsh-rajs-projects-4074e1e0.vercel.app',  // new Vercel deployment
+  'https://frontend-sigma-gray-63.vercel.app',  // old production frontend
+  'https://gudmed-hms-new.vercel.app',           // current production frontend
   process.env.FRONTEND_URL,         // set this in Render dashboard → Environment
 ].filter(Boolean)
 
@@ -28,9 +28,14 @@ const ALLOWED_ORIGINS = [
 // 5174, 5175, … when 5173 is taken), while keeping the strict allowlist in prod.
 const isLocalhost = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
 
+// Allow any *.vercel.app deployment. Every Vercel production/preview deploy gets
+// a unique hashed subdomain, so listing them one-by-one is endless whack-a-mole.
+const isVercelApp = (origin) => /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
+    if (isVercelApp(origin)) return cb(null, true)
     if (process.env.NODE_ENV !== 'production' && isLocalhost(origin)) return cb(null, true)
     cb(new Error(`CORS blocked: ${origin}`))
   },
