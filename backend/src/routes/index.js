@@ -15,9 +15,11 @@ import inpatientRoutes from './inpatientRoutes.js'
 import billingRoutes from './billingRoutes.js'
 import { router as deathCertificateRoutes } from './deathCertificateRoutes.js'
 import { router as doctorAccountabilityRoutes } from './doctorAccountabilityRoutes.js'
+import { router as feeSlabRoutes } from './feeSlabRoutes.js'
 import notificationRoutes from './notificationRoutes.js'
 import paymentRoutes from './paymentRoutes.js'
 import importRoutes from './importRoutes.js'
+import analyticsRoutes from './analyticsRoutes.js'
 
 export const router = Router()
 
@@ -44,5 +46,7 @@ router.use('/inpatient', inpatientRoutes)
 router.use('/billing', billingRoutes)
 router.use('/death-certificates', deathCertificateRoutes)
 router.use('/doctor-accountability', doctorAccountabilityRoutes)
+router.use('/fee-slabs', feeSlabRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/payments',      paymentRoutes)
+router.use('/analytics',     analyticsRoutes)

@@ -116,8 +116,14 @@ export const getAll = async (req, res, next) => {
   try {
     const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, status, urgency, examCategory, orderId } = req.query
-    const limit = parseInt(req.query.limit || '10')
-    const offset = parseInt(req.query.offset || '0')
+
+    // Parse and validate pagination parameters
+    let limit = parseInt(req.query.limit) || 10
+    let offset = parseInt(req.query.offset) || 0
+
+    // Ensure valid values
+    limit = Math.max(1, Math.min(limit, 1000)) // min 1, max 1000
+    offset = Math.max(0, offset) // min 0
 
     if (resource === 'exams') {
       const where = {
@@ -134,10 +140,22 @@ export const getAll = async (req, res, next) => {
         }),
         db.radiologyExam.count({ where }),
       ])
+
+      const hasMore = (offset + limit) < total
+      const page = Math.floor(offset / limit) + 1
+      const totalPages = Math.ceil(total / limit)
+
       return res.json({
         success: true,
         data,
-        meta: { total, limit, offset, hasMore: offset + limit < total },
+        meta: {
+          total,
+          limit,
+          offset,
+          page,
+          totalPages,
+          hasMore
+        },
       })
     }
 
@@ -161,10 +179,15 @@ export const getAll = async (req, res, next) => {
         }),
         db.radiologyOrder.count({ where }),
       ])
+
+      const hasMore = (offset + limit) < total
+      const page = Math.floor(offset / limit) + 1
+      const totalPages = Math.ceil(total / limit)
+
       return res.json({
         success: true,
         data,
-        meta: { total, limit, offset, hasMore: offset + limit < total },
+        meta: { total, limit, offset, page, totalPages, hasMore },
       })
     }
 
@@ -189,10 +212,15 @@ export const getAll = async (req, res, next) => {
         }),
         db.radiologyReport.count({ where }),
       ])
+
+      const hasMore = (offset + limit) < total
+      const page = Math.floor(offset / limit) + 1
+      const totalPages = Math.ceil(total / limit)
+
       return res.json({
         success: true,
         data,
-        meta: { total, limit, offset, hasMore: offset + limit < total },
+        meta: { total, limit, offset, page, totalPages, hasMore },
       })
     }
 

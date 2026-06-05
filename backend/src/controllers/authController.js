@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { db } from '../config/db.js'
+import { TOKEN_COOKIE, authCookieOptions, clearCookieOptions } from '../config/cookie.js'
 
 /**
  * POST /api/auth/login
@@ -41,9 +42,12 @@ export async function login(req, res, next) {
       { expiresIn: '8h' }
     )
 
+    // Primary auth transport: httpOnly Secure cookie (sent over HTTPS only in prod).
+    res.cookie(TOKEN_COOKIE, token, authCookieOptions)
+
     res.json({
       success: true,
-      token,
+      token, // also returned for backward-compatibility / non-browser clients
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -55,4 +59,35 @@ export async function login(req, res, next) {
   } catch (err) {
     next(err)
   }
+}
+
+/**
+ * POST /api/auth/logout
+ * Clears the auth cookie.
+ */
+export async function logout(_req, res) {
+  res.clearCookie(TOKEN_COOKIE, clearCookieOptions)
+  res.json({ success: true, message: 'Logged out' })
+}
+
+/**
+ * GET /api/auth/me
+ * Returns the currently authenticated user (decoded from the cookie/header).
+ */
+export async function me(req, res) {
+  if (!req.user?.userId) {
+    return res.status(401).json({ success: false, error: 'Not authenticated' })
+  }
+  const user = await db.user.findUnique({ where: { id: req.user.userId } })
+  if (!user) return res.status(401).json({ success: false, error: 'Not authenticated' })
+  res.json({
+    success: true,
+    user: {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      organizationId: req.user.organizationId,
+    },
+  })
 }

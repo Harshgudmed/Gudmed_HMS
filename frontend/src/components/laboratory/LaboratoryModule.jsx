@@ -33,6 +33,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import client from '@/api/client'
+import { drName } from '@/lib/utils'
 import PatientLookup from '@/components/common/PatientLookup'
 
 // ============================================
@@ -270,6 +271,7 @@ export default function LaboratoryModule() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [showTestDialog, setShowTestDialog] = useState(false)
+  const [orderTestSearch, setOrderTestSearch] = useState('')
   // Patient search for New Order dialog
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [showOrderDialog, setShowOrderDialog] = useState(false)
@@ -344,7 +346,7 @@ export default function LaboratoryModule() {
   const fetchTests = useCallback(async () => {
     try {
       setTestsLoading(true)
-      const data = await fetchApi('/laboratory?resource=tests&limit=500')
+      const data = await fetchApi('/laboratory?resource=tests&limit=2000')
       const testsArray = Array.isArray(data) ? data : (data?.data || [])
       setTests(testsArray.map(transformApiTest))
     } catch (error) {
@@ -359,7 +361,7 @@ export default function LaboratoryModule() {
   const fetchOrders = useCallback(async () => {
     try {
       setOrdersLoading(true)
-      const data = await fetchApi('/laboratory?resource=orders&limit=500')
+      const data = await fetchApi('/laboratory?resource=orders&limit=2000')
       const ordersArray = Array.isArray(data) ? data : (data?.data || [])
       setOrders(ordersArray.map(transformApiOrder))
     } catch (error) {
@@ -394,7 +396,7 @@ export default function LaboratoryModule() {
   // Fetch results
   const fetchResults = useCallback(async () => {
     try {
-      const data = await fetchApi('/laboratory?resource=results&limit=500')
+      const data = await fetchApi('/laboratory?resource=results&limit=2000')
       const resultsArray = Array.isArray(data) ? data : (data?.data || [])
       setResults(resultsArray.map(transformApiResult))
     } catch (error) {
@@ -773,7 +775,7 @@ tr:nth-child(even) td{background:#f9f9f9}
       <div class="info-cell"><div class="info-label">Patient Name</div><div class="info-value"><strong>${order.patientName}</strong></div></div>
       <div class="info-cell"><div class="info-label">UHID</div><div class="info-value">${order.patientMrn}</div></div>
       <div class="info-cell"><div class="info-label">Age / Sex</div><div class="info-value">${order.patientAge} yrs / ${order.patientGender.charAt(0).toUpperCase() + order.patientGender.slice(1)}</div></div>
-      <div class="info-cell"><div class="info-label">Requesting Physician</div><div class="info-value">${order.requestingDoctor ? 'Dr. '+order.requestingDoctor : '—'}</div></div>
+      <div class="info-cell"><div class="info-label">Requesting Physician</div><div class="info-value">${order.requestingDoctor ? drName(order.requestingDoctor) : '—'}</div></div>
     </div>
     <div class="info-box-hdr2">Order Details</div>
     <div class="info-grid">
@@ -2341,6 +2343,12 @@ tbody tr:hover{background:#f9fafb}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tests *</FormLabel>
+                    <Input 
+                      placeholder="Search tests..." 
+                      value={orderTestSearch}
+                      onChange={e => setOrderTestSearch(e.target.value)}
+                      className="mb-2"
+                    />
                     <div className="border rounded-lg p-4 max-h-60 overflow-y-auto">
                       {testsLoading ? (
                         <div className="flex items-center justify-center py-4">
@@ -2350,7 +2358,7 @@ tbody tr:hover{background:#f9fafb}
                         <p className="text-center text-gray-500 py-4">No tests available. Add tests to the catalog first.</p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-                          {tests.filter(t => t.isActive).map(test => (
+                          {tests.filter(t => t.isActive && (t.testName.toLowerCase().includes(orderTestSearch.toLowerCase()) || t.testCode.toLowerCase().includes(orderTestSearch.toLowerCase()))).slice(0, 50).map(test => (
                             <label
                               key={test.id}
                               htmlFor={test.id}

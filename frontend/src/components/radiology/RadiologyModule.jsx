@@ -159,11 +159,15 @@ export default function RadiologyModule() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
+      const examsOffset = (examsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE
+      const ordersOffset = (ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE
+      const reportsOffset = (reportsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE
+
       const [eRes, oRes, pRes, rRes] = await Promise.all([
-        client.get(`/radiology?resource=exams&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(examsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
-        client.get(`/radiology?resource=orders&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
-        client.get('/patients'),
-        client.get(`/radiology?resource=reports&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${(reportsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE}`),
+        client.get(`/radiology?resource=exams&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${examsOffset}`),
+        client.get(`/radiology?resource=orders&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${ordersOffset}`),
+        client.get('/patients?limit=1000'),
+        client.get(`/radiology?resource=reports&limit=${RADIOLOGY_ITEMS_PER_PAGE}&offset=${reportsOffset}`),
       ])
       if (eRes.success) {
         setExams(eRes.data || [])
@@ -730,7 +734,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
                   <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
                 ) : filteredOrders.length === 0 ? (
                   <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No orders found</TableCell></TableRow>
-                ) : filteredOrders.slice((ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, ordersPage * RADIOLOGY_ITEMS_PER_PAGE).map(o => (
+                ) : orders.map(o => (
                   <TableRow key={o.id}>
                     <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
                     <TableCell>
@@ -833,7 +837,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               <TableBody>
                 {filteredExams.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-400">No exams in catalog</TableCell></TableRow>
-                ) : filteredExams.slice((examsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, examsPage * RADIOLOGY_ITEMS_PER_PAGE).map(e => (
+                ) : exams.map(e => (
                   <TableRow key={e.id}>
                     <TableCell className="font-mono text-sm">{e.examCode || '—'}</TableCell>
                     <TableCell className="font-medium">{e.examName}</TableCell>
@@ -900,7 +904,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               <TableBody>
                 {reports.length === 0 ? (
                   <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No reports yet</TableCell></TableRow>
-                ) : reports.slice((reportsPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, reportsPage * RADIOLOGY_ITEMS_PER_PAGE).map(r => {
+                ) : reports.map(r => {
                   const ord = r.order || orders.find(o => o.id === r.orderId)
                   return (
                     <TableRow key={r.id}>
@@ -972,7 +976,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
             <TableBody>
               {filteredOrders.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No orders found</TableCell></TableRow>
-              ) : filteredOrders.slice((ordersPage - 1) * RADIOLOGY_ITEMS_PER_PAGE, ordersPage * RADIOLOGY_ITEMS_PER_PAGE).map(o => (
+              ) : orders.map(o => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono text-xs">{o.orderNumber}</TableCell>
                   <TableCell>
@@ -988,7 +992,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
                   <TableCell>{statusBadge(o.status)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => { setViewOrder(o); setShowViewOrderDialog(true) }}><Eye className="h-4 w-4" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setViewOrder(o); setShowViewOrder(true) }}><Eye className="h-4 w-4" /></Button>
                       {o.status === 'completed' && !reports.find(r => r.orderId === o.id) && (
                         <Button size="sm" variant="outline" className="text-xs" onClick={() => { setSelectedOrder(o); setReportForm(emptyReport); setShowReportDialog(true) }}>
                           <FileText className="h-3.5 w-3.5 mr-1" />Report

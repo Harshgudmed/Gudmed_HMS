@@ -12,25 +12,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import client from '@/api/client'
-
-const INDIAN_STATES = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
-  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
-  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
-  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
-  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
-  'Delhi', 'Jammu & Kashmir', 'Ladakh', 'Chandigarh', 'Puducherry',
-]
-
-const INSURANCE_PROVIDERS = [
-  'CGHS', 'ESIC', 'PM-JAY', 'Star Health', 'HDFC ERGO', 'Niva Bupa',
-  'LIC Health', 'United India', 'New India Assurance', 'Oriental Insurance',
-]
+import RegisterPatientForm from '@/components/common/RegisterPatientForm'
 
 const getStatusBadgeClass = (status) => {
   switch (status) {
@@ -46,36 +30,12 @@ const getStatusBadgeClass = (status) => {
   }
 }
 
-const emptyPatientForm = {
-  firstName: '',
-  middleName: '',
-  lastName: '',
-  dateOfBirth: '',
-  gender: 'male',
-  phonePrimary: '',
-  phoneSecondary: '',
-  email: '',
-  region: '',
-  zone: '',
-  woreda: '',
-  kebele: '',
-  emergencyContactName: '',
-  emergencyContactPhone: '',
-  emergencyContactRelationship: '',
-  bloodGroup: '',
-  hasInsurance: false,
-  insuranceProvider: '',
-  insuranceId: '',
-}
-
 export default function DashboardModule() {
   const navigate = useNavigate()
   const { orgInfo } = useOrgSettings() // Now automatically updates when settings change
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNewPatient, setShowNewPatient] = useState(false)
-  const [patientForm, setPatientForm] = useState(emptyPatientForm)
-  const [savingPatient, setSavingPatient] = useState(false)
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -107,31 +67,6 @@ export default function DashboardModule() {
     }
   }
 
-  const handleRegisterPatient = async (e) => {
-    e.preventDefault()
-    setSavingPatient(true)
-    try {
-      const res = await client.post('/patients', {
-        ...patientForm,
-        hasInsurance: patientForm.hasInsurance === true || patientForm.hasInsurance === 'true',
-      })
-      if (res.success) {
-        toast.success(`Patient UHID ${res.data.mrn} registered successfully`)
-        setShowNewPatient(false)
-        setPatientForm(emptyPatientForm)
-        fetchDashboard()
-      } else {
-        toast.error(res.error || 'Failed to register patient')
-      }
-    } catch {
-      toast.error('Failed to register patient')
-    } finally {
-      setSavingPatient(false)
-    }
-  }
-
-  const setField = (field, value) => setPatientForm(prev => ({ ...prev, [field]: value }))
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -145,6 +80,40 @@ export default function DashboardModule() {
           New Patient
         </Button>
       </div>
+        {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => setShowNewPatient(true)}>
+              <UserPlus className="h-6 w-6" />
+              <span>New Patient</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/appointments')}>
+              <Calendar className="h-6 w-6" />
+              <span>Book Appointment</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/triage')}>
+              <Stethoscope className="h-6 w-6" />
+              <span>Triage Patient</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/laboratory')}>
+              <FlaskConical className="h-6 w-6" />
+              <span>Lab Order</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/pharmacy')}>
+              <Pill className="h-6 w-6" />
+              <span>Dispense</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/billing')}>
+              <Receipt className="h-6 w-6" />
+              <span>New Invoice</span>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Primary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -340,177 +309,15 @@ export default function DashboardModule() {
         </Card>
       </div>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => setShowNewPatient(true)}>
-              <UserPlus className="h-6 w-6" />
-              <span>New Patient</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/appointments')}>
-              <Calendar className="h-6 w-6" />
-              <span>Book Appointment</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/triage')}>
-              <Stethoscope className="h-6 w-6" />
-              <span>Triage Patient</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/laboratory')}>
-              <FlaskConical className="h-6 w-6" />
-              <span>Lab Order</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/pharmacy')}>
-              <Pill className="h-6 w-6" />
-              <span>Dispense</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/billing')}>
-              <Receipt className="h-6 w-6" />
-              <span>New Invoice</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+    
 
       {/* New Patient Dialog */}
       <Dialog open={showNewPatient} onOpenChange={setShowNewPatient}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Register New Patient</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleRegisterPatient} className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>First Name *</Label>
-                <Input value={patientForm.firstName} onChange={e => setField('firstName', e.target.value)} required placeholder="First name" />
-              </div>
-              <div>
-                <Label>Middle Name</Label>
-                <Input value={patientForm.middleName} onChange={e => setField('middleName', e.target.value)} placeholder="Middle name" />
-              </div>
-              <div>
-                <Label>Last Name *</Label>
-                <Input value={patientForm.lastName} onChange={e => setField('lastName', e.target.value)} required placeholder="Last name" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Date of Birth *</Label>
-                <Input type="date" value={patientForm.dateOfBirth} onChange={e => setField('dateOfBirth', e.target.value)} required />
-              </div>
-              <div>
-                <Label>Gender *</Label>
-                <Select value={patientForm.gender} onValueChange={v => setField('gender', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Blood Group</Label>
-                <Select value={patientForm.bloodGroup} onValueChange={v => setField('bloodGroup', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>
-                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
-                      <SelectItem key={bg} value={bg}>{bg}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Primary Phone *</Label>
-                <Input value={patientForm.phonePrimary} onChange={e => setField('phonePrimary', e.target.value)} placeholder="+91 XXXXX XXXXX" required />
-              </div>
-              <div>
-                <Label>Secondary Phone</Label>
-                <Input value={patientForm.phoneSecondary} onChange={e => setField('phoneSecondary', e.target.value)} placeholder="+91 XXXXX XXXXX" />
-              </div>
-            </div>
-
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={patientForm.email} onChange={e => setField('email', e.target.value)} placeholder="patient@email.com" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>State</Label>
-                <Select value={patientForm.region} onValueChange={v => setField('region', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
-                  <SelectContent>
-                    {INDIAN_STATES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>City / District</Label>
-                <Input value={patientForm.zone} onChange={e => setField('zone', e.target.value)} placeholder="City or district" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Emergency Contact</Label>
-                <Input value={patientForm.emergencyContactName} onChange={e => setField('emergencyContactName', e.target.value)} placeholder="Contact name" />
-              </div>
-              <div>
-                <Label>Contact Phone</Label>
-                <Input value={patientForm.emergencyContactPhone} onChange={e => setField('emergencyContactPhone', e.target.value)} placeholder="+91 XXXXX XXXXX" />
-              </div>
-              <div>
-                <Label>Relationship</Label>
-                <Input value={patientForm.emergencyContactRelationship} onChange={e => setField('emergencyContactRelationship', e.target.value)} placeholder="e.g. Spouse" />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="hasInsurance"
-                checked={patientForm.hasInsurance}
-                onChange={e => setField('hasInsurance', e.target.checked)}
-                className="h-4 w-4"
-              />
-              <Label htmlFor="hasInsurance">Has Insurance</Label>
-            </div>
-
-            {patientForm.hasInsurance && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Insurance Provider</Label>
-                  <Select value={patientForm.insuranceProvider} onValueChange={v => setField('insuranceProvider', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select provider" /></SelectTrigger>
-                    <SelectContent>
-                      {INSURANCE_PROVIDERS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Insurance ID</Label>
-                  <Input value={patientForm.insuranceId} onChange={e => setField('insuranceId', e.target.value)} placeholder="Policy / Member ID" />
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button type="button" variant="outline" onClick={() => setShowNewPatient(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={savingPatient}>
-                {savingPatient ? 'Registering...' : 'Register Patient'}
-              </Button>
-            </div>
-          </form>
+        <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto">
+          <RegisterPatientForm
+            onCancel={() => setShowNewPatient(false)}
+            onSuccess={() => { setShowNewPatient(false); fetchDashboard() }}
+          />
         </DialogContent>
       </Dialog>
     </div>

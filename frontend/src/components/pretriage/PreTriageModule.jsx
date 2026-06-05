@@ -360,7 +360,8 @@ export default function PreTriageModule() {
     try {
       setLoading(true)
       setError(null)
-      const res = await client.get('/pre-triage')
+      // Pass limit=500 to ensure ALL records are fetched (backend default is limit=50)
+      const res = await client.get('/pre-triage?limit=500&offset=0')
       setScreenings(res.data ?? [])
     } catch (err) {
       setError(err.message)
@@ -375,24 +376,25 @@ export default function PreTriageModule() {
 
   const stats = useMemo(() => ({
     total:      screenings.length,
-    pending:    screenings.filter(s => s.status === 'screening').length,
-    routed:     screenings.filter(s => s.status === 'routed').length,
-    registered: screenings.filter(s => s.status === 'registered_as_patient').length,
+    pending:    screenings.filter(s => (s.status || '').toLowerCase() === 'screening').length,
+    routed:     screenings.filter(s => (s.status || '').toLowerCase() === 'routed').length,
+    registered: screenings.filter(s => (s.status || '').toLowerCase() === 'registered_as_patient').length,
   }), [screenings])
 
   const filteredScreenings = useMemo(() => {
     let list = screenings
     if (activeFilter !== 'all') {
-      list = list.filter(s => s.status === STATUS_DB_MAP[activeFilter])
+      const dbStatus = STATUS_DB_MAP[activeFilter]
+      list = list.filter(s => (s.status || '').toLowerCase() === dbStatus)
     }
     if (searchQuery) {
       const lower = searchQuery.toLowerCase()
       list = list.filter(s =>
-        s.screeningNumber.toLowerCase().includes(lower) ||
-        s.firstName?.toLowerCase().includes(lower) ||
-        s.lastName?.toLowerCase().includes(lower) ||
-        s.phone?.includes(lower) ||
-        s.patient?.mrn?.toLowerCase().includes(lower)
+        (s.screeningNumber || '').toLowerCase().includes(lower) ||
+        (s.firstName || '').toLowerCase().includes(lower) ||
+        (s.lastName || '').toLowerCase().includes(lower) ||
+        (s.phone || '').includes(lower) ||
+        (s.patient?.mrn || '').toLowerCase().includes(lower)
       )
     }
     return list
@@ -577,21 +579,52 @@ export default function PreTriageModule() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <CardTitle>Screenings</CardTitle>
             <div className="flex items-center gap-3 flex-wrap">
-              {/* Filter tabs */}
+              {/* Filter tabs with live counts */}
               <div className="flex rounded-md border overflow-hidden">
-                {FILTERS.map(f => (
-                  <button
-                    key={f.key}
-                    onClick={() => setActiveFilter(f.key)}
-                    className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                      activeFilter === f.key
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setActiveFilter('all')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    activeFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  All
+                  <span className={`text-xs rounded-full px-1.5 py-0 ${
+                    activeFilter === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                  }`}>{stats.total}</span>
+                </button>
+                <button
+                  onClick={() => setActiveFilter('pending')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    activeFilter === 'pending' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Pending
+                  <span className={`text-xs rounded-full px-1.5 py-0 ${
+                    activeFilter === 'pending' ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-700'
+                  }`}>{stats.pending}</span>
+                </button>
+                <button
+                  onClick={() => setActiveFilter('routed')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    activeFilter === 'routed' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Routed
+                  <span className={`text-xs rounded-full px-1.5 py-0 ${
+                    activeFilter === 'routed' ? 'bg-blue-500 text-white' : 'bg-orange-100 text-orange-700'
+                  }`}>{stats.routed}</span>
+                </button>
+                <button
+                  onClick={() => setActiveFilter('registered')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    activeFilter === 'registered' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Registered
+                  <span className={`text-xs rounded-full px-1.5 py-0 ${
+                    activeFilter === 'registered' ? 'bg-blue-500 text-white' : 'bg-green-100 text-green-700'
+                  }`}>{stats.registered}</span>
+                </button>
               </div>
               {/* Search */}
               <div className="relative w-64">
@@ -710,7 +743,7 @@ export default function PreTriageModule() {
           {filteredScreenings.length > ITEMS_PER_PAGE && (() => {
             const totalPages = Math.ceil(filteredScreenings.length / ITEMS_PER_PAGE)
             return (
-              <div className="flex items-center justify-center gap-2 p-4 border-t">
+              <div className="flex items-center justify-end gap-2 p-4 border-t">
                 <Button
                   variant="outline"
                   size="sm"

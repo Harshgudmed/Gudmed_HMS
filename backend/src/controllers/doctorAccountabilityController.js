@@ -5,6 +5,12 @@ export async function handleGet(req, res, next) {
     const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, doctorId, status, period } = req.query
 
+    // Parse and validate pagination parameters
+    let limit = parseInt(req.query.limit) || 10
+    let offset = parseInt(req.query.offset) || 0
+    limit = Math.max(1, Math.min(limit, 1000))
+    offset = Math.max(0, offset)
+
     if (resource === 'doctors') {
       const doctors = await db.user.findMany({
         where: { organizationId: ORG_ID, role: 'doctor', isActive: true },
@@ -22,15 +28,30 @@ export async function handleGet(req, res, next) {
       if (doctorId) where.doctorId = doctorId
       if (status) where.status = status
       if (period) where.period = period
-      const commissions = await db.doctorCommission.findMany({
-        where,
-        include: {
-          doctor: { select: { id: true, fullName: true } },
-          settledBy: { select: { id: true, fullName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
+
+      const [commissions, total] = await Promise.all([
+        db.doctorCommission.findMany({
+          where,
+          include: {
+            doctor: { select: { id: true, fullName: true } },
+            settledBy: { select: { id: true, fullName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        db.doctorCommission.count({ where }),
+      ])
+
+      const hasMore = (offset + limit) < total
+      const page = Math.floor(offset / limit) + 1
+      const totalPages = Math.ceil(total / limit)
+
+      return res.json({
+        success: true,
+        data: commissions,
+        meta: { total, limit, offset, page, totalPages, hasMore }
       })
-      return res.json({ success: true, data: commissions })
     }
 
     if (resource === 'stats') {
@@ -74,7 +95,21 @@ export async function handlePost(req, res, next) {
     const { resource } = req.query
 
     if (resource === 'config') {
-      const { doctorId, commissionType, commissionRate, isActive, notes } = req.body
+      const { doctorId, commissionType, commissionRate, isActive, notes, consultationFee, followUpDays } = req.body
+
+      // Persist the doctor's appointment fee + free follow-up window on the user record
+      const userData = {}
+      if (consultationFee !== undefined) {
+        userData.consultationFee = consultationFee === '' || consultationFee === null ? null : parseFloat(consultationFee)
+      }
+      if (followUpDays !== undefined) {
+        userData.followUpDays = followUpDays === '' || followUpDays === null ? null : parseInt(followUpDays)
+      }
+      if (Object.keys(userData).length) {
+        // Scope to this org — only update a doctor that belongs to the caller's org
+        await db.user.updateMany({ where: { id: doctorId, organizationId: ORG_ID }, data: userData })
+      }
+
       const existing = await db.doctorCommissionConfig.findUnique({ where: { doctorId } })
       let config
       if (existing) {

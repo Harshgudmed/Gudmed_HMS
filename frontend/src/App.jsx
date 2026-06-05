@@ -50,6 +50,23 @@ const NAV_ITEMS = [
   { to: '/settings',              label: 'Settings' },
 ]
 
+// Sidebar items that are gated by a Settings → Modules toggle.
+// Items without an entry here (Dashboard, Settings) are always shown.
+const MODULE_BY_PATH = {
+  '/patients':              'patients',
+  '/pre-triage':            'preTriage',
+  '/queue':                 'queue',
+  '/triage':                'triage',
+  '/consultations':         'consultations',
+  '/pharmacy':              'pharmacy',
+  '/laboratory':            'laboratory',
+  '/radiology':             'radiology',
+  '/inpatient':             'inpatient',
+  '/reports':               'reports',
+  '/doctor-accountability': 'doctorAccountability',
+  '/death-certificates':    'deathCertificates',
+}
+
 function applyBranding(settings) {
   if (!settings) return
   const root = document.documentElement
@@ -65,12 +82,14 @@ function applyBranding(settings) {
 export default function App() {
   const [navbarColor, setNavbarColor] = useState('#2E4168')
   const [hospitalName, setHospitalName] = useState('Hospital HMS')
+  const [modulesEnabled, setModulesEnabled] = useState({})
 
   useEffect(() => {
     client.get('/settings').then(res => {
       const s = res.data?.settings || {}
       if (s.navbarColor)   setNavbarColor(s.navbarColor)
       if (s.hospitalName)  setHospitalName(s.hospitalName || res.data?.name || 'Hospital HMS')
+      if (res.data?.modulesEnabled) setModulesEnabled(res.data.modulesEnabled)
       applyBranding({ ...s, hospitalName: s.hospitalName || res.data?.name })
     }).catch(() => {})
 
@@ -79,16 +98,25 @@ export default function App() {
       applyBranding(e.detail)
     }
     const onNameChange  = (e) => setHospitalName(e.detail)
+    const onModulesChange = (e) => setModulesEnabled(e.detail || {})
 
     window.addEventListener('navbarColorChange', onColorChange)
     window.addEventListener('hospitalNameChange', onNameChange)
     window.addEventListener('brandingChange', onColorChange)
+    window.addEventListener('modulesChange', onModulesChange)
     return () => {
       window.removeEventListener('navbarColorChange', onColorChange)
       window.removeEventListener('hospitalNameChange', onNameChange)
       window.removeEventListener('brandingChange', onColorChange)
+      window.removeEventListener('modulesChange', onModulesChange)
     }
   }, [])
+
+  // Hide sidebar items whose module has been disabled in Settings → Modules
+  const visibleNavItems = NAV_ITEMS.filter(({ to }) => {
+    const mod = MODULE_BY_PATH[to]
+    return !mod || modulesEnabled[mod] !== false
+  })
 
   const light = isLightColor(navbarColor)
   const colored = navbarColor !== '#ffffff' && navbarColor !== '#fff'
@@ -112,7 +140,7 @@ export default function App() {
           </span>
         </NavLink>
         <nav className="flex-1 py-4 space-y-1 px-2">
-          {NAV_ITEMS.map(({ to, label }) => (
+          {visibleNavItems.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}

@@ -35,6 +35,7 @@ const admissionSchema = z.object({
   depositAmount: z.number().optional(),
   admissionNotes: z.string().optional(),
   isCritical: z.boolean().optional(),
+  criticalLevel: z.string().optional(),
   admittingDoctorId: z.string().optional(),
   attendingDoctorId: z.string().optional(),
 })
@@ -53,6 +54,12 @@ export async function getAll(req, res) {
   try {
     const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, wardId, status } = req.query
+
+    // Parse and validate pagination parameters
+    let limit = parseInt(req.query.limit) || 10
+    let offset = parseInt(req.query.offset) || 0
+    limit = Math.max(1, Math.min(limit, 1000))
+    offset = Math.max(0, offset)
 
     if (resource === 'wards') {
       const wards = await db.ward.findMany({
@@ -93,26 +100,39 @@ export async function getAll(req, res) {
       const where = { organizationId: ORGANIZATION_ID }
       if (status) where.status = status
 
-      const admissions = await db.admission.findMany({
-        where,
-        include: {
-          patient: {
-            select: {
-              id: true,
-              mrn: true,
-              firstName: true,
-              lastName: true,
-              gender: true,
-              dateOfBirth: true,
-              phonePrimary: true,
+      const [admissions, total] = await Promise.all([
+        db.admission.findMany({
+          where,
+          include: {
+            patient: {
+              select: {
+                id: true,
+                mrn: true,
+                firstName: true,
+                lastName: true,
+                gender: true,
+                dateOfBirth: true,
+                phonePrimary: true,
+              },
             },
+            bed: { include: { ward: true } },
           },
-          bed: { include: { ward: true } },
-        },
-        orderBy: { admissionDate: 'desc' },
-      })
+          orderBy: { admissionDate: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        db.admission.count({ where }),
+      ])
 
-      return res.json({ success: true, data: admissions })
+      const hasMore = (offset + limit) < total
+      const page = Math.floor(offset / limit) + 1
+      const totalPages = Math.ceil(total / limit)
+
+      return res.json({
+        success: true,
+        data: admissions,
+        meta: { total, limit, offset, page, totalPages, hasMore }
+      })
     }
 
     if (resource === 'notes') {

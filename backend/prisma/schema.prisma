@@ -74,6 +74,7 @@ model Organization {
   beds                Bed[]
   admissions          Admission[]
   deathCertificates        DeathCertificate[]
+  doctorFeeSlabs           DoctorFeeSlab[]
   doctorCommissionConfigs  DoctorCommissionConfig[]
   doctorCommissions        DoctorCommission[]
   pharmacyPurchaseOrders   PharmacyPurchaseOrder[]
@@ -106,6 +107,8 @@ model User {
   departmentId   String?
   specialization String?
   licenseNumber  String?
+  consultationFee Float?  // default appointment/consultation fee for this doctor (₹)
+  followUpDays    Int?    // free follow-up window: a repeat visit to this doctor within N days is not charged
 
   // System
   isActive        Boolean   @default(true)
@@ -157,6 +160,7 @@ model User {
   userActivities         UserActivity[]
 
   // Doctor Accountability
+  feeSlabs               DoctorFeeSlab[]         @relation("DoctorFeeSlabs")
   commissionConfig       DoctorCommissionConfig? @relation("DoctorCommissionConfig")
   commissions            DoctorCommission[]      @relation("DoctorCommissions")
   commissionsSettled     DoctorCommission[]      @relation("CommissionsSettled")
@@ -209,12 +213,12 @@ model Patient {
   email          String?
 
   // Address (Ethiopian format)
-  region             String?
-  zone               String?
-  woreda             String?
-  kebele             String?
-  houseNumber        String?
-  addressDescription String?
+  region      String?
+  zone        String?
+  woreda      String?
+  kebele      String?
+  houseNumber String?
+  postalCode  String? // PIN code
 
   // Emergency Contact
   emergencyContactName         String?
@@ -465,6 +469,7 @@ model Appointment {
   appointmentType String? // new_patient, follow_up, emergency
   departmentId    String?
   priority        String  @default("normal") // normal, urgent
+  consultationFee Float?  // fee charged for this appointment (₹)
 
   // Status
   status String @default("scheduled") // scheduled, confirmed, checked_in, in_progress, completed, cancelled, no_show, rescheduled
@@ -639,6 +644,7 @@ model Admission {
   depositAmount        Float?
   admissionNotes       String?
   isCritical           Boolean  @default(false)
+  criticalLevel        String?  // 'blue' or 'yellow'
   admittingDoctorId    String?
   attendingDoctorId    String?
 
@@ -1440,6 +1446,32 @@ model Payment {
   @@index([invoiceId])
   @@index([patientId])
   @@index([receiptNumber])
+}
+
+/// Doctor Fee Slab (day-based follow-up fee structure)
+model DoctorFeeSlab {
+  id             String  @id @default(cuid())
+  organizationId String
+  doctorId       String
+
+  // Slab definition: applies fee when days_since_last_visit is in range [fromDays, toDays)
+  fromDays       Int
+  toDays         Int
+  feeAmount      Float
+
+  // Status and notes
+  isActive       Boolean @default(true)
+  notes          String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  doctor         User         @relation("DoctorFeeSlabs", fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, fromDays, toDays])
+  @@index([doctorId])
+  @@index([organizationId])
 }
 
 /// Doctor Commission Configuration (rate per doctor)

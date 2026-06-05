@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -26,6 +27,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import client from '@/api/client'
+import { drName } from '@/lib/utils'
 import PatientLookup from '@/components/common/PatientLookup'
 
 const ICD10_CODES = [
@@ -126,7 +128,7 @@ function printConsultation(consultation, patientName, patientMrn, patientAge, pa
   const html = `<!DOCTYPE html><html><head><title>Consultation Note — ${patientMrn}</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;background:#fff}.page{max-width:210mm;margin:0 auto;padding:12mm 14mm 10mm}.hosp-header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:3px solid #1e3a5f;padding-bottom:8px;margin-bottom:8px}.hosp-name{font-size:18pt;font-weight:bold;color:#1e3a5f}.hosp-sub{font-size:9pt;color:#555;margin-top:2px}.doc-ref{font-size:8.5pt;color:#555;text-align:right;line-height:1.6}.banner{background:#1e3a5f;color:#fff;text-align:center;padding:5px;font-size:12pt;font-weight:bold;letter-spacing:2px;margin-bottom:8px}.pt-box{border:1px solid #333;margin-bottom:10px}.pt-hdr{background:#1e3a5f;color:#fff;padding:3px 10px;font-size:9pt;font-weight:bold;text-transform:uppercase}.g4{display:grid;grid-template-columns:repeat(4,1fr)}.cell{padding:4px 10px;border-right:1px solid #ccc;border-bottom:1px solid #ccc}.cell:last-child{border-right:none}.lbl{font-size:7.5pt;color:#555;font-weight:bold;text-transform:uppercase}.val{font-size:10pt;margin-top:1px}.vitals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid #333;margin-bottom:10px}.v-cell{padding:6px 10px;border-right:1px solid #ccc;text-align:center}.v-cell:last-child{border-right:none}.v-num{font-size:14pt;font-weight:bold;color:#1e3a5f}.v-unit{font-size:8pt;color:#888}.v-lbl{font-size:8pt;color:#555;margin-top:1px}.section{margin-bottom:10px}.section-title{font-weight:bold;font-size:10pt;color:#1e3a5f;border-bottom:1.5px solid #1e3a5f;padding-bottom:2px;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px}.section-body{font-size:10pt;line-height:1.6;padding-left:4px;white-space:pre-wrap}.dx-box{border:2px solid #1e3a5f;padding:10px;background:#f0f4f8;margin-bottom:10px}.dx-title{font-weight:bold;font-size:10.5pt;color:#1e3a5f;margin-bottom:3px;text-transform:uppercase}.dx-body{font-size:11pt;font-weight:500}.fu-box{border-left:4px solid #10b981;background:#f0fdf4;padding:7px 10px;margin-bottom:10px;font-size:10pt}.ref-box{border-left:4px solid #f59e0b;background:#fffbeb;padding:7px 10px;margin-bottom:10px;font-size:10pt}table{width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:8px}th{background:#1e3a5f;color:#fff;padding:5px 8px;text-align:left;font-size:9pt}td{padding:4px 8px;border-bottom:1px solid #e8e8e8}tr:nth-child(even) td{background:#f9f9f9}.sig-section{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:16px;padding-top:10px;border-top:2px solid #000}.sig-line{border-bottom:1px solid #000;height:38px;margin-bottom:4px}.sig-label{font-size:9pt;color:#444;line-height:1.6}.footer{margin-top:12px;border-top:1px solid #ccc;padding-top:4px;font-size:8pt;color:#888;text-align:center}@media print{.page{padding:8mm}}</style></head><body>
 <div class="page">
-<div class="hosp-header"><div><div class="hosp-name">${orgInfo.name}</div><div class="hosp-sub">Clinical Department — Consultation Note</div></div><div class="doc-ref">Visit Date: <strong>${visitDate}</strong><br/>Attending: <strong>Dr. ${doctorName}</strong><br/>Printed: ${printDate}</div></div>
+<div class="hosp-header"><div><div class="hosp-name">${orgInfo.name}</div><div class="hosp-sub">Clinical Department — Consultation Note</div></div><div class="doc-ref">Visit Date: <strong>${visitDate}</strong><br/>Attending: <strong>${drName(doctorName)}</strong><br/>Printed: ${printDate}</div></div>
 <div class="banner">CONSULTATION NOTE</div>
 <div class="pt-box"><div class="pt-hdr">Patient Information</div><div class="g4">
 <div class="cell"><div class="lbl">Patient Name</div><div class="val"><strong>${patientName}</strong></div></div>
@@ -156,7 +158,7 @@ ${followUp || consultation.followUpInstructions ? `<div class="fu-box">${followU
 ${consultation.referredTo ? `<div class="ref-box"><strong>Referral:</strong> ${consultation.referredTo}${consultation.referralReason ? ` — ${consultation.referralReason}` : ''}</div>` : ''}
 ${consultation.notes ? `<div class="section"><div class="section-title">Additional Notes</div><div class="section-body">${consultation.notes}</div></div>` : ''}
 <div class="sig-section">
-<div><div class="sig-line"></div><div class="sig-label"><strong>Consulting Physician:</strong> Dr. ${doctorName}<br/>Date: ${visitDate}</div></div>
+<div><div class="sig-line"></div><div class="sig-label"><strong>Consulting Physician:</strong> ${drName(doctorName)}<br/>Date: ${visitDate}</div></div>
 <div><div class="sig-line"></div><div class="sig-label"><strong>Patient / Guardian Signature</strong><br/>Date: ___________________</div></div>
 </div>
 <div class="footer">${orgInfo.name} — Clinical Department &nbsp;|&nbsp; Confidential Medical Record &nbsp;|&nbsp; Printed: ${printDate}</div>
@@ -310,6 +312,36 @@ export default function ConsultationModule() {
     setEditingId(c.id)
     setSelectedPatientId(c.patientId)
     setSelectedDoctorId(c.doctorId)
+    
+    if (c.prescriptions && c.prescriptions.length > 0) {
+      try { setPrescriptionItems(JSON.parse(c.prescriptions[0].items)) } catch(e) { setPrescriptionItems([]) }
+    } else { setPrescriptionItems([]) }
+    
+    if (c.labOrders && c.labOrders.length > 0) {
+      try {
+        setLabOrderItems(JSON.parse(c.labOrders[0].tests))
+        setOrdersClinicalIndication(c.labOrders[0].clinicalIndication || '')
+      } catch(e) { setLabOrderItems([]) }
+    } else { setLabOrderItems([]) }
+    
+    if (c.radiologyOrders && c.radiologyOrders.length > 0) {
+      const allRadItems = []
+      c.radiologyOrders.forEach(order => {
+        const exam = radiologyExams.find(e => e.id === order.examId)
+        if (exam) {
+          allRadItems.push({
+            examId: exam.id,
+            examName: exam.examName,
+            examCode: exam.examCode || '',
+            examCategory: exam.examCategory || '',
+            urgency: order.urgency || 'routine',
+            bodyPart: exam.bodyPart || ''
+          })
+        }
+      })
+      setRadiologyOrderItems(allRadItems)
+    } else { setRadiologyOrderItems([]) }
+
     vitalsForm.reset({
       temperature: c.temperature ?? undefined,
       bloodPressureSystolic: c.bloodPressureSystolic ?? undefined,
@@ -553,7 +585,7 @@ export default function ConsultationModule() {
                               )}
                               <div className="mt-2 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-500">Dr. {docName}</span>
+                                  <span className="text-xs text-gray-500">{drName(docName)}</span>
                                   {hasPrescription && <Badge variant="secondary" className="text-xs"><Pill className="h-3 w-3 mr-1" />Rx</Badge>}
                                 </div>
                                 <div className="flex gap-1">
@@ -625,7 +657,7 @@ export default function ConsultationModule() {
                     <div><p className="text-gray-500 font-medium">Patient</p><p className="font-semibold">{patName}</p></div>
                     <div><p className="text-gray-500 font-medium">UHID</p><p>{pat?.mrn || '—'}</p></div>
                     <div><p className="text-gray-500 font-medium">Age / Sex</p><p>{pat?.dateOfBirth ? getAge(pat.dateOfBirth) : '—'} yrs / {pat?.gender}</p></div>
-                    <div><p className="text-gray-500 font-medium">Doctor</p><p>Dr. {docName}</p></div>
+                    <div><p className="text-gray-500 font-medium">Doctor</p><p>{drName(docName)}</p></div>
                     <div><p className="text-gray-500 font-medium">Visit Date</p><p>{format(new Date(c.visitDate), 'dd MMM yyyy HH:mm')}</p></div>
                     <div><p className="text-gray-500 font-medium">Visit Type</p><p className="capitalize">{c.visitType || 'Outpatient'}</p></div>
                   </div>
@@ -749,7 +781,7 @@ export default function ConsultationModule() {
                 <SelectContent>
                   {doctors.map(d => (
                     <SelectItem key={d.id} value={d.id}>
-                      Dr. {d.fullName}{d.specialization ? ` — ${d.specialization}` : ''}
+                      {drName(d.fullName)}{d.specialization ? ` — ${d.specialization}` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -923,17 +955,20 @@ export default function ConsultationModule() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2">
-                <Select value={selectedDrug} onValueChange={setSelectedDrug}>
-                  <SelectTrigger className="flex-1"><SelectValue placeholder="Search and select a drug..." /></SelectTrigger>
-                  <SelectContent>
-                    {drugs.length === 0
-                      ? <div className="p-3 text-sm text-gray-400 text-center">No drugs available — seed pharmacy first</div>
-                      : drugs.map(d => (
-                          <SelectItem key={d.id} value={d.id}>{d.drugName}{d.genericName ? ` (${d.genericName})` : ''} — {d.strength}</SelectItem>
-                        ))
-                    }
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  className="flex-1"
+                  value={selectedDrug}
+                  onChange={setSelectedDrug}
+                  placeholder="Search and select a drug..."
+                  searchPlaceholder="Type drug or generic name..."
+                  emptyText={drugs.length === 0 ? 'No drugs available — seed pharmacy first' : 'No matching drugs'}
+                  options={drugs.map(d => ({
+                    value: d.id,
+                    label: `${d.drugName}${d.strength ? ` — ${d.strength}` : ''}`,
+                    sublabel: d.genericName || '',
+                    keywords: `${d.genericName || ''} ${d.strength || ''}`,
+                  }))}
+                />
                 <Button onClick={addDrug} disabled={!selectedDrug}><Plus className="h-4 w-4 mr-1" />Add</Button>
               </div>
               {prescriptionItems.length === 0 ? (
@@ -1015,17 +1050,20 @@ export default function ConsultationModule() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2">
-                <Select value={selectedLabTest} onValueChange={setSelectedLabTest}>
-                  <SelectTrigger className="flex-1"><SelectValue placeholder="Select a lab test..." /></SelectTrigger>
-                  <SelectContent>
-                    {labTests.length === 0
-                      ? <div className="p-3 text-sm text-gray-400 text-center">No lab tests available</div>
-                      : labTests.map(t => (
-                          <SelectItem key={t.id} value={t.id}>{t.testName}{t.testCode ? ` (${t.testCode})` : ''}</SelectItem>
-                        ))
-                    }
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  className="flex-1"
+                  value={selectedLabTest}
+                  onChange={setSelectedLabTest}
+                  placeholder="Search and select a lab test..."
+                  searchPlaceholder="Type test name or code..."
+                  emptyText={labTests.length === 0 ? 'No lab tests available' : 'No matching tests'}
+                  options={labTests.map(t => ({
+                    value: t.id,
+                    label: `${t.testName}${t.testCode ? ` (${t.testCode})` : ''}`,
+                    sublabel: [t.testCategory, t.specimenType].filter(Boolean).join(' · '),
+                    keywords: `${t.testCode || ''} ${t.testCategory || ''}`,
+                  }))}
+                />
                 <Select value={selectedLabUrgency} onValueChange={setSelectedLabUrgency}>
                   <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1071,17 +1109,20 @@ export default function ConsultationModule() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2">
-                <Select value={selectedRadExam} onValueChange={setSelectedRadExam}>
-                  <SelectTrigger className="flex-1"><SelectValue placeholder="Select a radiology exam..." /></SelectTrigger>
-                  <SelectContent>
-                    {radiologyExams.length === 0
-                      ? <div className="p-3 text-sm text-gray-400 text-center">No radiology exams available</div>
-                      : radiologyExams.map(e => (
-                          <SelectItem key={e.id} value={e.id}>{e.examName}{e.examCode ? ` (${e.examCode})` : ''}</SelectItem>
-                        ))
-                    }
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  className="flex-1"
+                  value={selectedRadExam}
+                  onChange={setSelectedRadExam}
+                  placeholder="Search and select a radiology exam..."
+                  searchPlaceholder="Type exam name, modality or body part..."
+                  emptyText={radiologyExams.length === 0 ? 'No radiology exams available' : 'No matching exams'}
+                  options={radiologyExams.map(e => ({
+                    value: e.id,
+                    label: `${e.examName}${e.examCode ? ` (${e.examCode})` : ''}`,
+                    sublabel: [e.examCategory && e.examCategory.toUpperCase(), e.bodyPart, e.modality].filter(Boolean).join(' · '),
+                    keywords: `${e.examCode || ''} ${e.examCategory || ''} ${e.bodyPart || ''} ${e.modality || ''}`,
+                  }))}
+                />
                 <Select value={selectedRadUrgency} onValueChange={setSelectedRadUrgency}>
                   <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>

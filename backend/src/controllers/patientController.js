@@ -21,7 +21,7 @@ const patientSchema = z.object({
   woreda: z.string().optional(),
   kebele: z.string().optional(),
   houseNumber: z.string().optional(),
-  addressDescription: z.string().optional(),
+  postalCode: z.string().optional(),
   emergencyContactName: z.string().optional(),
   emergencyContactPhone: z.string().optional(),
   emergencyContactRelationship: z.string().optional(),
@@ -65,7 +65,41 @@ export async function getAll(req, res, next) {
       db.patient.count({ where }),
     ])
 
-    res.json({ success: true, data: patients, meta: { total, limit, offset, hasMore: offset + limit < total } })
+    // Flag which patients have a generated report (lab order with results,
+    // radiology order with a report) so the list can show clickable icons.
+    const ids = patients.map((p) => p.id)
+    const [labGroups, radGroups, admGroups] = ids.length
+      ? await Promise.all([
+          db.labOrder.groupBy({
+            by: ['patientId'],
+            where: { patientId: { in: ids }, results: { some: {} } },
+            _count: { _all: true },
+          }),
+          db.radiologyOrder.groupBy({
+            by: ['patientId'],
+            where: { patientId: { in: ids }, report: { isNot: null } },
+            _count: { _all: true },
+          }),
+          // Currently-admitted (IPD) patients only
+          db.admission.groupBy({
+            by: ['patientId'],
+            where: { patientId: { in: ids }, status: 'admitted' },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], [], []]
+
+    const labCount = Object.fromEntries(labGroups.map((g) => [g.patientId, g._count._all]))
+    const radCount = Object.fromEntries(radGroups.map((g) => [g.patientId, g._count._all]))
+    const admCount = Object.fromEntries(admGroups.map((g) => [g.patientId, g._count._all]))
+    const data = patients.map((p) => ({
+      ...p,
+      labReportCount: labCount[p.id] || 0,
+      radiologyReportCount: radCount[p.id] || 0,
+      admittedCount: admCount[p.id] || 0,
+    }))
+
+    res.json({ success: true, data, meta: { total, limit, offset, hasMore: offset + limit < total } })
   } catch (err) {
     next(err)
   }
@@ -76,6 +110,36 @@ export async function getOne(req, res, next) {
     const patient = await db.patient.findUnique({ where: { id: req.params.id } })
     if (!patient) return res.status(404).json({ success: false, error: 'Patient not found' })
     res.json({ success: true, data: patient })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getRecords(req, res, next) {
+  try {
+    const { id } = req.params
+    const patient = await db.patient.findUnique({ where: { id } })
+    if (!patient) return res.status(404).json({ success: false, error: 'Patient not found' })
+
+    const [labOrders, radiologyOrders, admissions] = await Promise.all([
+      db.labOrder.findMany({
+        where: { patientId: id },
+        include: { results: { include: { test: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      db.radiologyOrder.findMany({
+        where: { patientId: id },
+        include: { exam: true, report: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      db.admission.findMany({
+        where: { patientId: id },
+        include: { bed: { include: { ward: true } } },
+        orderBy: { admissionDate: 'desc' },
+      }),
+    ])
+
+    res.json({ success: true, data: { labOrders, radiologyOrders, admissions } })
   } catch (err) {
     next(err)
   }
@@ -103,7 +167,7 @@ export async function create(req, res, next) {
         woreda: validatedData.woreda,
         kebele: validatedData.kebele,
         houseNumber: validatedData.houseNumber,
-        addressDescription: validatedData.addressDescription,
+        postalCode: validatedData.postalCode,
         emergencyContactName: validatedData.emergencyContactName,
         emergencyContactPhone: validatedData.emergencyContactPhone,
         emergencyContactRelationship: validatedData.emergencyContactRelationship,

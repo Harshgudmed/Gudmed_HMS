@@ -34,6 +34,16 @@ export const createConsultationSchema = z.object({
     quantity: z.number(),
     instructions: z.string().optional(),
   })).optional(),
+  labTests: z.array(z.object({
+    testId: z.string().optional(),
+    testName: z.string(),
+    testCode: z.string().optional(),
+    urgency: z.string().optional().default('routine'),
+  })).optional(),
+  radiologyExams: z.array(z.object({
+    examId: z.string(),
+    examName: z.string().optional(),
+  })).optional(),
 })
 
 export const updateConsultationSchema = createConsultationSchema.partial()

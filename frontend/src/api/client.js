@@ -10,12 +10,16 @@ const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 const client = axios.create({
   baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  // Send/receive the httpOnly auth cookie on every request (cross-site in prod).
+  withCredentials: true,
   // 60s to tolerate Render free-tier cold starts (backend spins down after
   // ~15 min idle and takes 30-60s to wake on the first request).
   timeout: 60000,
 })
 
-// Attach JWT token on every request (for multi-tenancy)
+// The httpOnly cookie is the primary auth transport and is sent automatically.
+// We still attach a Bearer header when a token is present (e.g. older sessions
+// or non-cookie environments) as a fallback for multi-tenancy.
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) config.headers.Authorization = `Bearer ${token}`

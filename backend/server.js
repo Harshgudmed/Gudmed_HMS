@@ -3,11 +3,15 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
+import cookieParser from 'cookie-parser'
 import { router } from './src/routes/index.js'
 import { errorHandler } from './src/middleware/errorHandler.js'
 
 const app  = express()
 const PORT = process.env.PORT || 5000
+
+// Render/Vercel terminate TLS at a proxy — trust it so Secure cookies work
+app.set('trust proxy', 1)
 
 // ── CORS — works locally AND in production ───────────────────────────────────
 // To add a new frontend URL: just add it to ALLOWED_ORIGINS or set FRONTEND_URL in .env
@@ -20,9 +24,14 @@ const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL,         // set this in Render dashboard → Environment
 ].filter(Boolean)
 
+// Allow any localhost/127.0.0.1 port during development (Vite may fall back to
+// 5174, 5175, … when 5173 is taken), while keeping the strict allowlist in prod.
+const isLocalhost = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
+    if (process.env.NODE_ENV !== 'production' && isLocalhost(origin)) return cb(null, true)
     cb(new Error(`CORS blocked: ${origin}`))
   },
   credentials: true,
@@ -31,6 +40,7 @@ app.use(cors({
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet())
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'))
+app.use(cookieParser())
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 

@@ -60,6 +60,25 @@ const userSchema = z.object({
   specialization: z.string().optional(),
 })
 
+// All toggleable system modules (Dashboard & Settings are always available).
+// `key` must match the keys used by the sidebar's MODULE_BY_PATH map in App.jsx.
+const ALL_MODULES = [
+  { key: 'patients',             label: 'Patients',             description: 'Patient records and registration' },
+  { key: 'preTriage',            label: 'Pre-Triage',           description: 'Initial patient screening' },
+  { key: 'queue',                label: 'Queue',                description: 'Patient queue management' },
+  { key: 'triage',               label: 'Triage',               description: 'Triage assessment' },
+  { key: 'consultations',        label: 'Consultations',        description: 'Doctor consultations and notes' },
+  { key: 'pharmacy',             label: 'Pharmacy',             description: 'Drug inventory, dispensing, and sales' },
+  { key: 'laboratory',           label: 'Laboratory',           description: 'Lab orders, results, and verification' },
+  { key: 'radiology',            label: 'Radiology',            description: 'Imaging orders and reporting' },
+  { key: 'inpatient',            label: 'Inpatient',            description: 'Ward and bed management' },
+  { key: 'reports',              label: 'Reports',              description: 'Analytics and reports' },
+  { key: 'doctorAccountability', label: 'Doctor Accountability', description: 'Doctor commissions and settlements' },
+  { key: 'deathCertificates',    label: 'Death Certificates',   description: 'Death certificate issuance' },
+  { key: 'inventory',            label: 'Inventory',            description: 'Stock management across departments' },
+  { key: 'accounting',           label: 'Accounting',           description: 'Financial accounting and reporting' },
+]
+
 export default function SettingsModule() {
   const [activeTab, setActiveTab] = useState('organization')
   const [showUserDialog, setShowUserDialog] = useState(false)
@@ -79,10 +98,9 @@ export default function SettingsModule() {
     navbarColor: '#ffffff', moduleHeaderColor: '', logoUrl: '',
   })
 
-  const [modules, setModules] = useState({
-    pharmacy: true, laboratory: true, radiology: true,
-    inpatient: true, inventory: true, accounting: false,
-  })
+  const [modules, setModules] = useState(
+    Object.fromEntries(ALL_MODULES.map(m => [m.key, true]))
+  )
 
   const userForm = useForm({
     resolver: zodResolver(userSchema),
@@ -117,7 +135,7 @@ export default function SettingsModule() {
           moduleHeaderColor: orgRes.data.settings?.moduleHeaderColor || '',
           logoUrl: orgRes.data.logoUrl || '',
         })
-        if (orgRes.data.modulesEnabled) setModules(orgRes.data.modulesEnabled)
+        if (orgRes.data.modulesEnabled) setModules(prev => ({ ...prev, ...orgRes.data.modulesEnabled }))
       }
       if (usersRes.success) setUsers(usersRes.data || [])
       if (deptsRes.success) setDepartments(deptsRes.data || [])
@@ -186,12 +204,15 @@ export default function SettingsModule() {
   async function toggleModule(key) {
     const newModules = { ...modules, [key]: !modules[key] }
     setModules(newModules)
+    // Update the sidebar immediately (it listens for this event)
+    window.dispatchEvent(new CustomEvent('modulesChange', { detail: newModules }))
     try {
       await client.patch('/settings', { resource: 'organization', modulesEnabled: newModules })
       toast.success(`${key} module ${newModules[key] ? 'enabled' : 'disabled'}`)
     } catch {
       toast.error('Failed to update module settings')
       setModules(modules)
+      window.dispatchEvent(new CustomEvent('modulesChange', { detail: modules }))
     }
   }
 
@@ -597,27 +618,23 @@ export default function SettingsModule() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {Object.entries(modules).map(([key, enabled]) => (
-                  <div key={key} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-4">
-                      <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                        <Package className="h-5 w-5" />
+                {ALL_MODULES.map(({ key, label, description }) => {
+                  const enabled = modules[key] !== false
+                  return (
+                    <div key={key} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center gap-4">
+                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                          <Package className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{label}</p>
+                          <p className="text-sm text-gray-500">{description}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium capitalize">{key}</p>
-                        <p className="text-sm text-gray-500">
-                          {key === 'pharmacy' && 'Drug inventory, dispensing, and sales'}
-                          {key === 'laboratory' && 'Lab orders, results, and verification'}
-                          {key === 'radiology' && 'Imaging orders and reporting'}
-                          {key === 'inpatient' && 'Ward and bed management'}
-                          {key === 'inventory' && 'Stock management across departments'}
-                          {key === 'accounting' && 'Financial accounting and reporting'}
-                        </p>
-                      </div>
+                      <Switch checked={enabled} onCheckedChange={() => toggleModule(key)} />
                     </div>
-                    <Switch checked={enabled} onCheckedChange={() => toggleModule(key)} />
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

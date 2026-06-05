@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import client from "@/api/client";
+import { drName } from "@/lib/utils";
 
 const DRUG_CATEGORIES = [
   "Antibiotics",
@@ -559,7 +560,7 @@ export default function PharmacyModule() {
 <div class="grid">
 <div><div class="lbl">Patient</div><div class="val">${name}</div></div>
 <div><div class="lbl">UHID</div><div class="val">${rx.patient?.mrn || "—"}</div></div>
-<div><div class="lbl">Doctor</div><div class="val">Dr. ${rx.doctor?.fullName || "—"}</div></div>
+<div><div class="lbl">Doctor</div><div class="val">${rx.doctor?.fullName ? drName(rx.doctor.fullName) : "—"}</div></div>
 <div><div class="lbl">Date</div><div class="val">${rx.prescriptionDate ? format(new Date(rx.prescriptionDate), "dd MMM yyyy") : "—"}</div></div>
 <div><div class="lbl">Dispensed</div><div class="val">${today}</div></div>
 <div><div class="lbl">Total</div><div class="val">₹${totalCost.toFixed(2)}</div></div>

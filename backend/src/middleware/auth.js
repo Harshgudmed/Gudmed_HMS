@@ -2,7 +2,9 @@ import jwt from 'jsonwebtoken'
 
 export function authenticate(req, res, next) {
   try {
-    const token = req.headers.authorization?.split(' ')[1]
+    // Prefer the httpOnly cookie; fall back to the Authorization header for
+    // non-browser clients (and backward compatibility).
+    const token = req.cookies?.token || req.headers.authorization?.split(' ')[1]
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret')
       req.user = decoded

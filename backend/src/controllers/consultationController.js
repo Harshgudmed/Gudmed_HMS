@@ -52,9 +52,9 @@ export async function create(req, res, next) {
   try {
     const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const validatedData = req.validatedBody
-    const { prescriptionItems, ...consultationData } = validatedData
+    const { prescriptionItems, labTests, radiologyExams, ...consultationData } = validatedData
 
-    // Use a transaction to ensure consultation, prescriptions, and appointment updates all succeed or fail together
+    // Use a transaction to ensure consultation, prescriptions, lab orders, radiology orders, and appointment updates all succeed or fail together
     const consultation = await db.$transaction(async (tx) => {
       const newConsultation = await tx.consultation.create({
         data: {
@@ -104,6 +104,46 @@ export async function create(req, res, next) {
         prescriptionId = prescription.id
       }
 
+      // Create Lab Orders
+      let labOrderId = null
+      if (labTests && labTests.length > 0) {
+        const labOrder = await tx.labOrder.create({
+          data: {
+            organizationId,
+            patientId: consultationData.patientId,
+            consultationId: newConsultation.id,
+            requestedById: consultationData.doctorId,
+            orderNumber: `LAB${Date.now()}`,
+            tests: JSON.stringify(labTests),
+            clinicalIndication: consultationData.diagnosis,
+            priority: 'routine',
+            status: 'pending',
+          },
+        })
+        labOrderId = labOrder.id
+      }
+
+      // Create Radiology Orders
+      let radiologyOrderId = null
+      if (radiologyExams && radiologyExams.length > 0) {
+        for (const exam of radiologyExams) {
+          await tx.radiologyOrder.create({
+            data: {
+              organizationId,
+              patientId: consultationData.patientId,
+              consultationId: newConsultation.id,
+              requestedById: consultationData.doctorId,
+              examId: exam.examId,
+              orderNumber: `RAD${Date.now()}`,
+              clinicalIndication: consultationData.diagnosis,
+              urgency: 'routine',
+              status: 'pending',
+            },
+          })
+        }
+        radiologyOrderId = radiologyExams[0]?.examId
+      }
+
       if (consultationData.appointmentId) {
         await tx.appointment.update({
           where: { id: consultationData.appointmentId },
@@ -111,10 +151,35 @@ export async function create(req, res, next) {
         })
       }
 
-      return { consultation: newConsultation, prescriptionId }
+      // 5. Fetch and return the fully assembled record with all relations inside transaction
+      const fullConsultation = await tx.consultation.findUnique({
+        where: { id: newConsultation.id },
+        include: {
+          patient: { select: { id: true, mrn: true, firstName: true, middleName: true, lastName: true } },
+          doctor: { select: { id: true, fullName: true } },
+          prescriptions: true,
+          labOrders: {
+            include: {
+              results: { include: { test: true } }
+            }
+          },
+          radiologyOrders: {
+            include: { exam: true, report: true }
+          },
+        },
+      })
+
+      return { consultation: fullConsultation, prescriptionId, labOrderId, radiologyOrderId }
     })
 
-    res.status(201).json({ success: true, data: consultation.consultation, prescriptionId: consultation.prescriptionId, message: 'Consultation saved successfully' })
+    res.status(201).json({
+      success: true,
+      data: consultation.consultation,
+      prescriptionId: consultation.prescriptionId,
+      labOrderId: consultation.labOrderId,
+      radiologyOrderId: consultation.radiologyOrderId,
+      message: 'Consultation saved with prescriptions, lab orders, and radiology orders'
+    })
   } catch (err) {
     next(err)
   }
@@ -124,7 +189,17 @@ export async function update(req, res, next) {
   try {
     const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { id } = req.params
-    const { prescriptionItems, ...updateData } = req.validatedBody
+    const { prescriptionItems, labTests, radiologyExams, ...updateData } = req.validatedBody
+
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Consultation ID is required' })
+    }
+
+    // Verify consultation exists
+    const existingConsultation = await db.consultation.findUnique({ where: { id } })
+    if (!existingConsultation) {
+      return res.status(404).json({ success: false, error: 'Consultation not found' })
+    }
 
     if (updateData.icd10Codes && Array.isArray(updateData.icd10Codes)) {
       updateData.icd10Codes = JSON.stringify(updateData.icd10Codes)
@@ -133,13 +208,18 @@ export async function update(req, res, next) {
       updateData.followUpDate = new Date(updateData.followUpDate)
     }
 
-    // Use a transaction to safely handle both consultation updates and prescription updates
+    // Use a transaction to safely handle consultation, prescriptions, lab orders, and radiology orders
     const consultation = await db.$transaction(async (tx) => {
-      // 1. Update the main consultation record
-      await tx.consultation.update({
-        where: { id },
-        data: updateData,
-      })
+      // 1. Update the main consultation record (only if there are fields to update)
+      if (Object.keys(updateData).length > 0) {
+        await tx.consultation.update({
+          where: { id },
+          data: updateData,
+        })
+      }
+
+      // Fetch current consultation to get patientId and doctorId
+      const currentConsultation = await tx.consultation.findUnique({ where: { id } })
 
       // 2. Handle Prescriptions
       if (prescriptionItems && prescriptionItems.length > 0) {
@@ -155,9 +235,7 @@ export async function update(req, res, next) {
             data: { items: JSON.stringify(prescriptionItems) }
           })
         } else {
-          // If no prescription existed, we need to create one. 
-          // We fetch the consultation to get the patientId and doctorId.
-          const currentConsultation = await tx.consultation.findUnique({ where: { id } })
+          // If no prescription existed, we need to create one
           await tx.prescription.create({
             data: {
               organizationId,
@@ -171,13 +249,80 @@ export async function update(req, res, next) {
         }
       }
 
-      // 3. Fetch and return the fully assembled, updated record to send to the frontend
+      // 3. Handle Lab Orders
+      if (labTests && labTests.length > 0) {
+        // Check if a lab order already exists for this consultation
+        const existingLabOrder = await tx.labOrder.findFirst({
+          where: { consultationId: id }
+        })
+
+        if (existingLabOrder) {
+          // Update the existing lab order
+          await tx.labOrder.update({
+            where: { id: existingLabOrder.id },
+            data: {
+              tests: JSON.stringify(labTests),
+              clinicalIndication: updateData.diagnosis || existingLabOrder.clinicalIndication,
+            }
+          })
+        } else {
+          // Create new lab order
+          await tx.labOrder.create({
+            data: {
+              organizationId,
+              patientId: currentConsultation.patientId,
+              consultationId: currentConsultation.id,
+              requestedById: currentConsultation.doctorId,
+              orderNumber: `LAB${Date.now()}`,
+              tests: JSON.stringify(labTests),
+              clinicalIndication: updateData.diagnosis,
+              priority: 'routine',
+              status: 'pending',
+            }
+          })
+        }
+      }
+
+      // 4. Handle Radiology Orders
+      if (radiologyExams && radiologyExams.length > 0) {
+        // Delete existing radiology orders for this consultation
+        await tx.radiologyOrder.deleteMany({
+          where: { consultationId: id }
+        })
+
+        // Create new radiology orders
+        for (const exam of radiologyExams) {
+          await tx.radiologyOrder.create({
+            data: {
+              organizationId,
+              patientId: currentConsultation.patientId,
+              consultationId: currentConsultation.id,
+              requestedById: currentConsultation.doctorId,
+              examId: exam.examId,
+              orderNumber: `RAD${Date.now()}`,
+              clinicalIndication: updateData.diagnosis,
+              urgency: 'routine',
+              status: 'pending',
+            }
+          })
+        }
+      }
+
+      // 5. Fetch and return the fully assembled, updated record with all relations
       return await tx.consultation.findUnique({
         where: { id },
         include: {
           patient: { select: { id: true, mrn: true, firstName: true, middleName: true, lastName: true } },
           doctor: { select: { id: true, fullName: true } },
           prescriptions: true,
+          labOrders: {
+            include: {
+              results: { include: { test: true } }
+            }
+          },
+          radiologyOrders: {
+            include: { exam: true, report: true }
+          },
         },
       })
     })

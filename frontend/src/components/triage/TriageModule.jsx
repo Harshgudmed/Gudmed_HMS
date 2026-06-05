@@ -100,16 +100,19 @@ export default function TriageModule() {
   const fetchTriageRecords = useCallback(async () => {
     setError(null)
     try {
-      const offset = (triageCurrentPage - 1) * TRIAGE_ITEMS_PER_PAGE
-      const res = await client.get(`/triage?limit=${TRIAGE_ITEMS_PER_PAGE}&offset=${offset}`)
+      // Fetch all records so client-side stats and filters work
+      const res = await client.get(`/triage?limit=500&offset=0`)
       const raw = res.data ?? []
       setTriageRecords(raw.map(q => ({
         id: q.id,
         patientId: q.patientId,
         patient: q.patient,
-        triageType: 'emergency',
-        urgencyLevel: q.priority === 'urgent' ? 'red' : 'yellow',
-        chiefComplaint: q.serviceArea || 'General',
+        triageType: q.serviceArea === 'Emergency' ? 'emergency' :
+                    q.serviceArea === 'Pediatric' ? 'pediatric' :
+                    q.serviceArea === 'MCH' ? 'mch' :
+                    q.serviceArea === 'Psychiatric' ? 'psychiatric' : 'emergency',
+        urgencyLevel: q.priority === 'urgent' ? 'red' : 'green',
+        chiefComplaint: q.serviceType || q.serviceArea || 'General',
         status: q.status,
         createdAt: new Date(q.joinedQueueAt),
         waitTime: q.waitTime,
@@ -117,7 +120,7 @@ export default function TriageModule() {
     } catch (err) {
       setError(err.message || 'Failed to load triage records')
     }
-  }, [triageCurrentPage])
+  }, [])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
