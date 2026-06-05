@@ -1,4 +1,4 @@
-// Deployment: 2026-06-05 19:30:00
+// Deployment: 2026-06-05 19:45:00 - Secrets configured
 import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { Toaster } from 'sonner'
