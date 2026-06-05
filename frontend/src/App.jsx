@@ -88,10 +88,13 @@ export default function App() {
   useEffect(() => {
     client.get('/settings').then(res => {
       const s = res.data?.settings || {}
+      // The hospital name is persisted on the organization's `name` column, not
+      // in the settings blob — read it from there first so it survives a refresh.
+      const orgName = res.data?.name || s.hospitalName
       if (s.navbarColor)   setNavbarColor(s.navbarColor)
-      if (s.hospitalName)  setHospitalName(s.hospitalName || res.data?.name || 'Hospital HMS')
+      if (orgName)         setHospitalName(orgName)
       if (res.data?.modulesEnabled) setModulesEnabled(res.data.modulesEnabled)
-      applyBranding({ ...s, hospitalName: s.hospitalName || res.data?.name })
+      applyBranding({ ...s, hospitalName: orgName })
     }).catch(() => {})
 
     const onColorChange = (e) => {

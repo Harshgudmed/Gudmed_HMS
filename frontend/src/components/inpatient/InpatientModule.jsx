@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { format, differenceInDays } from 'date-fns'
 import { getOrgSettings } from '@/lib/orgSettings'
 import { toast } from 'sonner'
@@ -77,7 +76,6 @@ const emptyCharge = { name:'', type:'Other', amount:'', quantity:1 }
 const emptyAddBed = { wardId:'', bedNumber:'', type:'Standard' }
 
 export default function InpatientModule() {
-  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [doctors, setDoctors] = useState([])
   const [wards, setWards] = useState([])
@@ -911,7 +909,13 @@ ${chargesRows}
                                   type="button"
                                   onClick={() => {
                                     if (isAvailable) {
-                                      navigate(`/patients?register=1&bedId=${bed.id}&wardId=${w.id}`)
+                                      // Open the in-module New Admission tab with this
+                                      // ward + bed pre-selected (admit an existing patient),
+                                      // instead of jumping to the Register-New-Patient page.
+                                      setActiveTab('new-admission')
+                                      setAdmitPatient(null)
+                                      setAdmitForm({ ...emptyAdmission, wardId: w.id, bedId: bed.id })
+                                      fetchBedsForWard(w.id)
                                     }
                                   }}
                                   className={`relative w-[68px] rounded-lg border-2 ${styles.bed} p-1.5 flex flex-col items-center transition-all ${isAvailable ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5' : 'cursor-default'}`}
@@ -938,7 +942,7 @@ ${chargesRows}
                                         )}
                                       </div>
                                     ) : bed.status === 'available' ? (
-                                      <div className="mt-0.5 text-green-300">Available · click to register patient</div>
+                                      <div className="mt-0.5 text-green-300">Available · click to admit patient</div>
                                     ) : (
                                       <div className="mt-0.5 text-gray-300 capitalize">{bed.status}</div>
                                     )}
