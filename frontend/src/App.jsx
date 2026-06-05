@@ -1,3 +1,4 @@
+// Deployment: 2026-06-05 19:30:00
 import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { Toaster } from 'sonner'
