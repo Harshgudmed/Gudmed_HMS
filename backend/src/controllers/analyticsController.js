@@ -41,7 +41,8 @@ export async function getAnalytics(req, res, next) {
           where: { organizationId: ORG_ID, status: 'admitted', isCritical: true }
         }),
         db.admission.findMany({
-          where: { organizationId: ORG_ID, status: 'admitted', expectedDischargeDate: { lte: new Date() } }
+          where: { organizationId: ORG_ID, status: 'admitted' },
+          select: { admissionDate: true, expectedLengthOfStay: true }
         }),
         db.patient.count({ where: { organizationId: ORG_ID } }),
         db.labOrder.count({ where: { organizationId: ORG_ID } }),
@@ -57,11 +58,19 @@ export async function getAnalytics(req, res, next) {
 
       const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0
 
+      // Admissions overdue for discharge: admissionDate + expectedLengthOfStay (days) has passed.
+      const nowMs = Date.now()
+      const pendingDischargeCount = pendingDischarges.filter(a =>
+        a.admissionDate && a.expectedLengthOfStay
+          ? new Date(a.admissionDate).getTime() + a.expectedLengthOfStay * 86400000 <= nowMs
+          : false
+      ).length
+
       return res.json({
         success: true,
         data: {
           beds: { total: totalBeds, occupied: occupiedBeds, available: totalBeds - occupiedBeds, occupancyRate },
-          admissions: { active: activeAdmissions, critical: criticalPatients, dischargedToday, pendingDischarge: pendingDischarges.length },
+          admissions: { active: activeAdmissions, critical: criticalPatients, dischargedToday, pendingDischarge: pendingDischargeCount },
           patients: { total: totalPatients },
           orders: { labOrders, radiologyOrders },
           consultations,
