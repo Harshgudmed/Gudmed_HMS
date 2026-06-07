@@ -1,0 +1,10 @@
+{
+  "appId": "in.gudmed.hms",
+  "appName": "GudMed HMS",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

@@ -24,7 +24,9 @@ async function main() {
     organizations:          await grab('organization'),
     departments:            await grab('department'),
     users:                  await grab('user'),
-    patients:               await grab('patient'),
+    // Strip addressDescription: the local DB/stale client still has this column,
+    // but production's schema dropped it, so prod rejects patients that include it.
+    patients:               (await grab('patient')).map(({ addressDescription, ...p }) => p),
     wards:                  await grab('ward'),
     beds:                   await grab('bed'),
     admissions:             await grab('admission'),
