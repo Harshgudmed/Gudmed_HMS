@@ -43,11 +43,23 @@ export default function BookAppointmentSheet({ brandColor = '#2E4168', doctor = 
   const [complaint, setComplaint] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [feeCalc, setFeeCalc] = useState(null)
+  const [feeCalcLoading, setFeeCalcLoading] = useState(false)
 
   useEffect(() => {
     if (lockedDoctor) return
     client.get('/settings', { params: { resource: 'users' } })
-      .then(r => setDoctors((r?.data || []).filter(u => u.role === 'doctor')))
+      .then(r => {
+        const docs = (r?.data || []).filter(u => u.role === 'doctor')
+        // De-duplicate repeated doctor records (same name + specialization) from seed data
+        const seen = new Set()
+        const unique = docs.filter(d => {
+          const k = `${(d.fullName || '').trim().toLowerCase()}|${(d.specialization || '').trim().toLowerCase()}`
+          if (seen.has(k)) return false
+          seen.add(k); return true
+        })
+        setDoctors(unique)
+      })
       .catch(() => {})
   }, [lockedDoctor])
 
@@ -59,6 +71,24 @@ export default function BookAppointmentSheet({ brandColor = '#2E4168', doctor = 
     return () => clearTimeout(t)
   }, [pq, patient])
 
+  // Ask the backend for the fee + New/Follow-up flag (same engine as desktop).
+  useEffect(() => {
+    if (!patient?.id || !doctorId || !date) { setFeeCalc(null); return }
+    let cancelled = false
+    setFeeCalcLoading(true)
+    client.get('/fee-slabs/calculate', { params: { doctorId, patientId: patient.id, date: new Date(date).toISOString() } })
+      .then(r => {
+        if (cancelled || !r?.success) return
+        const c = r.data
+        setFeeCalc(c)
+        setType(prev => (prev === 'emergency' || prev === 'walk_in') ? prev : (c.isNewPatient ? 'new_patient' : 'follow_up'))
+        setFee(String(c.fee))
+      })
+      .catch(() => { if (!cancelled) setFeeCalc(null) })
+      .finally(() => { if (!cancelled) setFeeCalcLoading(false) })
+    return () => { cancelled = true }
+  }, [patient, doctorId, date])
+
   const submit = async () => {
     if (!patient) { toast.error('Select a patient'); return }
     if (!doctorId) { toast.error('Select a doctor'); return }
@@ -69,7 +99,7 @@ export default function BookAppointmentSheet({ brandColor = '#2E4168', doctor = 
         patientId: patient.id, doctorId,
         appointmentDate: new Date(date).toISOString(), appointmentTime: time,
         durationMinutes: parseInt(duration) || 30, appointmentType: type, priority,
-        consultationFee: parseFloat(fee) || undefined,
+        // Fee is decided by the doctor's slabs on the backend — not sent from the form
         chiefComplaint: complaint || undefined,
         notes: notes || undefined,
       })
@@ -133,8 +163,16 @@ export default function BookAppointmentSheet({ brandColor = '#2E4168', doctor = 
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5"><label className="text-xs font-medium text-gray-500">Priority</label><select value={priority} onChange={e => setPriority(e.target.value)} className={bkInput}><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select></div>
-          <div className="space-y-1.5"><label className="text-xs font-medium text-gray-500">Consultation fee (₹)</label><input type="number" value={fee} onChange={e => setFee(e.target.value)} className={bkInput} /></div>
+          <div className="space-y-1.5"><label className="text-xs font-medium text-gray-500">Charge (₹)</label><input type="number" value={fee} readOnly placeholder="Select patient + doctor" className={`${bkInput} bg-gray-100 text-gray-700`} /></div>
         </div>
+        {(feeCalcLoading || feeCalc) && (
+          <div className={`rounded-xl px-3.5 py-2.5 text-xs font-medium ${feeCalc?.isNewPatient ? 'bg-blue-50 text-blue-700' : feeCalc?.fee === 0 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+            {feeCalcLoading ? 'Calculating charge…'
+              : feeCalc.isNewPatient ? `🆕 New Patient — base fee ₹${feeCalc.fee}${feeCalc.daysSinceLastVisit != null ? ` (last visit ${feeCalc.daysSinceLastVisit}d ago, >30d reset)` : ''}`
+              : feeCalc.fee === 0 ? `✓ Free follow-up — ${feeCalc.daysSinceLastVisit}d since new visit`
+              : `↩ Follow-up — ${feeCalc.daysSinceLastVisit}d since new visit${feeCalc.appliedSlab?.fromDays != null ? `, slab ${feeCalc.appliedSlab.fromDays}–${feeCalc.appliedSlab.toDays}` : ''} → ₹${feeCalc.fee}`}
+          </div>
+        )}
         <div className="space-y-1.5"><label className="text-xs font-medium text-gray-500">Chief complaint</label><input value={complaint} onChange={e => setComplaint(e.target.value)} placeholder="Reason for visit" className={bkInput} /></div>
         <div className="space-y-1.5"><label className="text-xs font-medium text-gray-500">Notes (optional)</label><input value={notes} onChange={e => setNotes(e.target.value)} className={bkInput} /></div>
 

@@ -1,35 +1,45 @@
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
 import { db } from '../config/db.js'
 import { TOKEN_COOKIE, authCookieOptions, clearCookieOptions } from '../config/cookie.js'
 
 /**
  * POST /api/auth/login
- * Body: { email, password, organizationId? }
+ * Body: { email, password }
  * Returns a JWT containing userId, organizationId, role, email.
  *
- * NOTE: This is a skeleton — add password hashing (bcrypt) before production use.
+ * The hospital (organization) is derived from the user record — there is no
+ * hospital segment in the URL, so a staff email is unique across the system.
  */
 export async function login(req, res, next) {
   try {
-    const { email, password, organizationId: bodyOrgId } = req.body
+    const { email, password } = req.body
 
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'email is required' })
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'email and password are required' })
     }
 
     const user = await db.user.findUnique({ where: { email } })
 
-    if (!user) {
+    // Same generic message whether the email is unknown or the password is wrong,
+    // so we don't leak which staff emails exist.
+    if (!user || !user.passwordHash) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' })
     }
 
-    // TODO: replace with bcrypt.compare(password, user.passwordHash) once passwords are hashed
-    // For now accept any non-empty password as placeholder
-    if (!password) {
+    const passwordOk = await bcrypt.compare(password, user.passwordHash)
+    if (!passwordOk) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' })
     }
 
-    const orgId = user.organizationId || bodyOrgId || process.env.ORGANIZATION_ID || 'org-demo'
+    if (user.isActive === false) {
+      return res.status(403).json({ success: false, error: 'Your account has been deactivated. Contact your administrator.' })
+    }
+
+    const orgId = user.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+
+    // Best-effort: record the sign-in time, never block login on this.
+    db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => {})
 
     const token = jwt.sign(
       {
@@ -62,6 +72,53 @@ export async function login(req, res, next) {
 }
 
 /**
+ * POST /api/auth/patient-login
+ * Body: { identifier, password }  — identifier is the patient's phone, UHID/MRN, or email.
+ * Returns a JWT with { patientId, role: 'patient', organizationId }.
+ */
+export async function patientLogin(req, res, next) {
+  try {
+    const { identifier, password } = req.body
+    if (!identifier || !password) {
+      return res.status(400).json({ success: false, error: 'identifier (phone / UHID / email) and password are required' })
+    }
+    const id = String(identifier).trim()
+
+    const patient = await db.patient.findFirst({
+      where: { OR: [{ phonePrimary: id }, { mrn: id }, { email: id }] },
+    })
+
+    // Generic message so we don't reveal which identifiers exist.
+    if (!patient || !patient.passwordHash) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' })
+    }
+    const ok = await bcrypt.compare(password, patient.passwordHash)
+    if (!ok) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' })
+    }
+    if (patient.isActive === false) {
+      return res.status(403).json({ success: false, error: 'This account is inactive. Please contact the hospital.' })
+    }
+
+    const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ')
+    const token = jwt.sign(
+      { patientId: patient.id, organizationId: patient.organizationId, role: 'patient', name: fullName },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '8h' }
+    )
+    res.cookie(TOKEN_COOKIE, token, authCookieOptions)
+
+    res.json({
+      success: true,
+      token,
+      user: { id: patient.id, role: 'patient', fullName, mrn: patient.mrn, organizationId: patient.organizationId },
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
  * POST /api/auth/logout
  * Clears the auth cookie.
  */
@@ -72,9 +129,26 @@ export async function logout(_req, res) {
 
 /**
  * GET /api/auth/me
- * Returns the currently authenticated user (decoded from the cookie/header).
+ * Returns the currently authenticated user (staff OR patient) decoded from the cookie/header.
  */
 export async function me(req, res) {
+  // Patient session
+  if (req.user?.role === 'patient' && req.user.patientId) {
+    const patient = await db.patient.findUnique({ where: { id: req.user.patientId } })
+    if (!patient) return res.status(401).json({ success: false, error: 'Not authenticated' })
+    return res.json({
+      success: true,
+      user: {
+        id: patient.id,
+        role: 'patient',
+        fullName: [patient.firstName, patient.lastName].filter(Boolean).join(' '),
+        mrn: patient.mrn,
+        organizationId: req.user.organizationId,
+      },
+    })
+  }
+
+  // Staff session
   if (!req.user?.userId) {
     return res.status(401).json({ success: false, error: 'Not authenticated' })
   }

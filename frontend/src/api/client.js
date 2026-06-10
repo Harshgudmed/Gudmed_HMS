@@ -29,10 +29,27 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response.data,
   (error) => {
+    const status  = error.response?.status
     const data    = error.response?.data
     const message = data?.error || error.message || 'Request failed'
+
+    // Session expired / not authenticated: clear the stale token and bounce to the
+    // matching role login. Skip the auth probes themselves (so logged-out /auth/me
+    // doesn't trigger a redirect) and skip when already on a login page.
+    if (status === 401 && typeof window !== 'undefined') {
+      const reqUrl  = error.config?.url || ''
+      const path    = window.location.pathname
+      const isProbe = reqUrl.includes('/auth/me') || reqUrl.includes('/auth/login')
+      const onLogin = /\/login\/?$/.test(path)
+      if (!isProbe && !onLogin) {
+        localStorage.removeItem('token')
+        const role = path.split('/').filter(Boolean)[0]
+        window.location.assign(role ? `/${role}/login` : '/')
+      }
+    }
+
     const err     = new Error(message)
-    err.status    = error.response?.status
+    err.status    = status
     err.code      = data?.code
     return Promise.reject(err)
   }

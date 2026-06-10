@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import BookAppointmentSheet from '@/components/BookAppointmentSheet'
+import DoctorFeeConfigSheet from '@/components/DoctorFeeConfigSheet'
 import {
   ChevronLeft, Phone, MessageCircle, Mail, CalendarPlus, BadgeCheck,
-  Stethoscope, Building2, ShieldCheck, ArrowLeft, AtSign,
+  Stethoscope, Building2, ShieldCheck, ArrowLeft, AtSign, BadgeIndianRupee,
 } from 'lucide-react'
 
 function shade(hex, percent) {
@@ -23,6 +24,7 @@ export default function MobileDoctorDetail({ brandColor = '#2E4168' }) {
   useParams()
   const d = state?.doctor
   const [showBook, setShowBook] = useState(false)
+  const [showConfig, setShowConfig] = useState(false)
 
   if (!d) {
     return (
@@ -75,13 +77,20 @@ export default function MobileDoctorDetail({ brandColor = '#2E4168' }) {
       </div>
 
       {/* Book appointment CTA */}
-      <div className="px-4 mt-4">
+      <div className="px-4 mt-4 space-y-2.5">
         <button
           onClick={() => setShowBook(true)}
           className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-white font-bold elev-3 active:scale-[.99] transition"
           style={{ background: `linear-gradient(135deg, ${shade(brandColor, 16)}, ${shade(brandColor, -20)})` }}
         >
           <CalendarPlus className="h-5 w-5" /> Book Appointment
+        </button>
+        <button
+          onClick={() => setShowConfig(true)}
+          className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 font-bold border-2 active:scale-[.99] transition"
+          style={{ borderColor: brandColor, color: brandColor }}
+        >
+          <BadgeIndianRupee className="h-5 w-5" /> Fees &amp; Commission
         </button>
       </div>
 
@@ -98,6 +107,7 @@ export default function MobileDoctorDetail({ brandColor = '#2E4168' }) {
       </div>
 
       {showBook && <BookAppointmentSheet brandColor={brandColor} doctor={d} onClose={() => setShowBook(false)} onCreated={() => setShowBook(false)} />}
+      {showConfig && <DoctorFeeConfigSheet doctorId={d.id} doctorName={`Dr. ${name}`} brandColor={brandColor} onClose={() => setShowConfig(false)} />}
     </div>
   )
 }

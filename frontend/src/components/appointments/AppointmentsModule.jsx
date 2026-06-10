@@ -180,6 +180,7 @@ export default function AppointmentsModule() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [doctorFilter, setDoctorFilter] = useState("all");
+  const [deptFilter, setDeptFilter] = useState("all"); // department NAME or 'all'
   // Only one dialog is ever open — a single value prevents invalid states.
   const [activeDialog, setActiveDialog] = useState(null); // 'new' | 'cancel' | 'reschedule' | 'edit' | null
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -223,8 +224,10 @@ export default function AppointmentsModule() {
       setUsers(usersResult.value?.data ?? []);
     if (departmentsResult.status === "fulfilled")
       setDepartments(departmentsResult.value?.data ?? []);
-    if (servicesResult.status === "fulfilled")
-      setOpdServices(servicesResult.value?.data ?? []);
+    if (servicesResult.status === "fulfilled") {
+      const svc = servicesResult.value?.data;
+      setOpdServices(Array.isArray(svc) ? svc : []);
+    }
     const firstErr = [patientsResult, appointmentsResult, usersResult].find(
       (r) => r.status === "rejected",
     );
@@ -246,7 +249,7 @@ export default function AppointmentsModule() {
   }, [hookOrgInfo]);
   useEffect(() => {
     setAppointmentsListPage(1);
-  }, [selectedDate, statusFilter, doctorFilter, searchQuery]);
+  }, [selectedDate, statusFilter, doctorFilter, deptFilter, searchQuery]);
 
   // No second fetch on dialog open — patients and users are already loaded on mount
 
@@ -317,43 +320,103 @@ export default function AppointmentsModule() {
     },
   });
 
-  // Detect a free follow-up: same patient + same doctor seen within the doctor's
-  // configured window before the selected date. Backend enforces this too.
+  // Ask the backend what this visit will cost: it detects New vs Follow-up from the
+  // patient's history with this doctor, applies the doctor's day-based fee slabs, and
+  // resets to "New Patient" after 30 days. This is the SAME logic the booking endpoint
+  // uses, so the preview always matches the charge.
   const watchDoctorId = form.watch("doctorId");
   const watchPatientId = form.watch("patientId");
   const watchDate = form.watch("appointmentDate");
-  const followUpInfo = useMemo(() => {
-    if (!watchDoctorId || !watchPatientId || !watchDate) return null;
-    const doctor = doctors.find((d) => d.id === watchDoctorId);
-    if (!doctor?.followUpDays || doctor.followUpDays <= 0) return null;
-    const apptDate = parseDate(watchDate);
-    const windowStart = new Date(apptDate);
-    windowStart.setDate(windowStart.getDate() - doctor.followUpDays);
-    const prior = appointments
-      .filter(
-        (a) =>
-          a.patientId === watchPatientId &&
-          a.doctorId === watchDoctorId &&
-          !["cancelled", "no_show"].includes(a.status),
-      )
-      .map((a) => parseDate(a.appointmentDate))
-      .filter((d) => d >= windowStart && d < apptDate)
-      .sort((x, y) => y - x)[0];
-    return prior ? { days: doctor.followUpDays, lastVisit: prior } : null;
-  }, [watchDoctorId, watchPatientId, watchDate, doctors, appointments]);
+  const [feeCalc, setFeeCalc] = useState(null);
+  const [feeCalcLoading, setFeeCalcLoading] = useState(false);
 
-  // When a free follow-up applies, zero out the fee field for transparency
   useEffect(() => {
-    if (followUpInfo) form.setValue("consultationFee", "0");
-  }, [followUpInfo, form]);
+    if (!watchDoctorId || !watchPatientId || !watchDate) {
+      setFeeCalc(null);
+      return;
+    }
+    let cancelled = false;
+    setFeeCalcLoading(true);
+    const apptDate = parseDate(watchDate);
+    client
+      .get(
+        `/fee-slabs/calculate?doctorId=${watchDoctorId}&patientId=${watchPatientId}&date=${apptDate.toISOString()}`,
+      )
+      .then((res) => {
+        if (cancelled || !res?.success) return;
+        const calc = res.data;
+        setFeeCalc(calc);
+        // Auto-flag the visit type (don't override a manual "emergency" choice)
+        const current = form.getValues("appointmentType");
+        if (current !== "emergency") {
+          form.setValue(
+            "appointmentType",
+            calc.isNewPatient ? "new_patient" : "follow_up",
+          );
+        }
+        // Reflect the fee that will actually be charged
+        form.setValue("consultationFee", String(calc.fee));
+      })
+      .catch(() => {
+        if (!cancelled) setFeeCalc(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFeeCalcLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [watchDoctorId, watchPatientId, watchDate, form]);
 
-  // Doctors filtered by the selected department (for the appointment form)
+  // The DB has the same department name seeded several times (e.g. 5× "Cardiology").
+  // Collapse them to one entry per name so the dropdown isn't full of duplicates.
+  const uniqueDepartments = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const d of departments) {
+      const key = (d.name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(d);
+    }
+    return out;
+  }, [departments]);
+
+  // doctorId → department name (works across the duplicate department copies)
+  const doctorDeptName = useMemo(() => {
+    const m = new Map();
+    for (const d of doctors) m.set(d.id, (d.department?.name || "").trim());
+    return m;
+  }, [doctors]);
+
+  // Doctor filter dropdown: only doctors who actually have appointments, so the
+  // list isn't cluttered with the many unused seeded doctor records.
+  const filterDoctors = useMemo(() => {
+    const ids = new Set(appointments.map((a) => a.doctorId));
+    return doctors.filter((d) => ids.has(d.id));
+  }, [appointments, doctors]);
+
+  // Doctors for the appointment form: filtered by the selected department's NAME
+  // (so a doctor in any "Cardiology" copy shows), then de-duplicated for display.
   const watchDept = form.watch("departmentId");
-  const availableDoctors = useMemo(
-    () =>
-      watchDept ? doctors.filter((d) => d.departmentId === watchDept) : doctors,
-    [watchDept, doctors],
-  );
+  const availableDoctors = useMemo(() => {
+    let list = doctors;
+    if (watchDept) {
+      const selName = (departments.find((d) => d.id === watchDept)?.name || "")
+        .trim()
+        .toLowerCase();
+      list = doctors.filter(
+        (d) => (d.department?.name || "").trim().toLowerCase() === selName,
+      );
+    }
+    const seen = new Set();
+    return list.filter((d) => {
+      const key = `${(d.fullName || "").trim().toLowerCase()}|${(d.specialization || "").trim().toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [watchDept, doctors, departments]);
 
   const stats = useMemo(() => {
     const todayApts = appointments.filter((a) =>
@@ -380,6 +443,12 @@ export default function AppointmentsModule() {
         return false;
       if (statusFilter !== "all" && apt.status !== statusFilter) return false;
       if (doctorFilter !== "all" && apt.doctorId !== doctorFilter) return false;
+      if (
+        deptFilter !== "all" &&
+        (doctorDeptName.get(apt.doctorId) || "").toLowerCase() !==
+          deptFilter.toLowerCase()
+      )
+        return false;
       if (searchQuery) {
         const patient = getPatient(apt.patientId);
         const doctor = getDoctor(apt.doctorId);
@@ -399,6 +468,8 @@ export default function AppointmentsModule() {
     selectedDate,
     statusFilter,
     doctorFilter,
+    deptFilter,
+    doctorDeptName,
     searchQuery,
     activeTab,
     getPatient,
@@ -439,6 +510,7 @@ export default function AppointmentsModule() {
     }
   };
 
+  
   const handleComplete = async (apt) => {
     try {
       await updateAppointment(apt.id, { status: "completed" });
@@ -771,7 +843,7 @@ export default function AppointmentsModule() {
                           <FormLabel>Department</FormLabel>
                           <SearchableSelect
                             className="w-full"
-                            options={departments.map((d) => ({
+                            options={uniqueDepartments.map((d) => ({
                               value: d.id,
                               label: d.name,
                             }))}
@@ -867,7 +939,7 @@ export default function AppointmentsModule() {
                     )}
                   />
 
-                  {/* Consultation Fee — set automatically by selected OPD service (read-only) */}
+                  {/* Charge Amount — decided by the doctor's fee slabs on the backend (read-only) */}
                   <FormField
                     control={form.control}
                     name="consultationFee"
@@ -884,15 +956,37 @@ export default function AppointmentsModule() {
                             {...field}
                           />
                         </FormControl>
-                        {followUpInfo ? (
-                          <p className="text-xs text-green-600 font-medium mt-1">
-                            ✓ Free follow-up — last seen{" "}
-                            {format(followUpInfo.lastVisit, "dd MMM yyyy")}{" "}
-                            (within {followUpInfo.days}-day window). No charge.
+                        {feeCalcLoading ? (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Calculating fee…
                           </p>
+                        ) : feeCalc ? (
+                          feeCalc.isNewPatient ? (
+                            <p className="text-xs text-blue-600 font-medium mt-1">
+                              🆕 New Patient — base consultation fee
+                              {feeCalc.daysSinceLastVisit != null
+                                ? ` (last visit ${feeCalc.daysSinceLastVisit} days ago, beyond 30-day window)`
+                                : ""}
+                              .
+                            </p>
+                          ) : feeCalc.fee === 0 ? (
+                            <p className="text-xs text-green-600 font-medium mt-1">
+                              ✓ Free follow-up — {feeCalc.daysSinceLastVisit} day(s)
+                              since last visit. No charge.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-amber-600 font-medium mt-1">
+                              ↩ Follow-up — {feeCalc.daysSinceLastVisit} day(s) since
+                              last visit
+                              {feeCalc.appliedSlab?.fromDays != null
+                                ? `, slab ${feeCalc.appliedSlab.fromDays}–${feeCalc.appliedSlab.toDays} days`
+                                : ""}
+                              .
+                            </p>
+                          )
                         ) : (
                           <p className="text-xs text-gray-400 mt-1">
-                            Set automatically from the selected doctor's fee.
+                            Set automatically from the doctor's fee structure.
                           </p>
                         )}
                         <FormMessage />
@@ -1000,7 +1094,7 @@ export default function AppointmentsModule() {
                           <FormLabel>Appointment Type</FormLabel>
                           <Select
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -1019,6 +1113,11 @@ export default function AppointmentsModule() {
                               </SelectItem>
                             </SelectContent>
                           </Select>
+                          {feeCalc && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Auto-detected from patient history — change if needed.
+                            </p>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1517,13 +1616,26 @@ export default function AppointmentsModule() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select value={deptFilter} onValueChange={setDeptFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All Departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {uniqueDepartments.map((d) => (
+                      <SelectItem key={d.id} value={d.name}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select value={doctorFilter} onValueChange={setDoctorFilter}>
                   <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="All Doctors" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Doctors</SelectItem>
-                    {doctors.map((doc) => (
+                    {filterDoctors.map((doc) => (
                       <SelectItem key={doc.id} value={doc.id}>
                         {doc.fullName}
                       </SelectItem>

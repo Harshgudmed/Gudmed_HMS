@@ -22,7 +22,8 @@ import { toast } from 'sonner'
 import {
   Users, Plus, Search, RefreshCw, Eye, Edit, UserPlus, Phone,
   Shield, Loader2, AlertTriangle, ChevronLeft, ChevronRight, Printer, Trash2,
-  FlaskConical, Scan, AlertCircle, FileText, Microscope, ScanLine, BedDouble
+  FlaskConical, Scan, AlertCircle, FileText, Microscope, ScanLine, BedDouble,
+  CalendarDays, IndianRupee, XCircle, Clock
 } from 'lucide-react'
 import client from '@/api/client'
 import RegisterPatientForm from '@/components/common/RegisterPatientForm'
@@ -298,7 +299,7 @@ export default function PatientsModule() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Lab/pathology + radiology reports for the selected patient (live)
-  const [records, setRecords] = useState({ labOrders: [], radiologyOrders: [], admissions: [] })
+  const [records, setRecords] = useState({ labOrders: [], radiologyOrders: [], admissions: [], appointments: [], invoices: [], billing: null })
   const [recordsLoading, setRecordsLoading] = useState(false)
 
   const fetchRecords = useCallback(async (patientId) => {
@@ -311,10 +312,29 @@ export default function PatientsModule() {
     }
   }, [])
 
+  const [cancellingId, setCancellingId] = useState(null)
+  const cancelAppointment = useCallback(async (appt) => {
+    if (!window.confirm('Cancel this appointment?')) return
+    setCancellingId(appt.id)
+    try {
+      const res = await client.patch(`/appointments/${appt.id}`, { status: 'cancelled' })
+      if (res.success !== false) {
+        toast.success('Appointment cancelled')
+        if (selectedPatient) fetchRecords(selectedPatient.id)
+      } else {
+        toast.error(res.error || 'Failed to cancel')
+      }
+    } catch (err) {
+      toast.error('Failed to cancel appointment')
+    } finally {
+      setCancellingId(null)
+    }
+  }, [selectedPatient, fetchRecords])
+
   const openPatient = useCallback((patient, tab = 'overview') => {
     setSelectedPatient(patient)
     setViewTab(tab)
-    setRecords({ labOrders: [], radiologyOrders: [], admissions: [] })
+    setRecords({ labOrders: [], radiologyOrders: [], admissions: [], appointments: [], invoices: [], billing: null })
     setRecordsLoading(true)
     setShowViewDialog(true)
     fetchRecords(patient.id).finally(() => setRecordsLoading(false))
@@ -1039,10 +1059,17 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
               </div>
 
               <Tabs value={viewTab} onValueChange={setViewTab}>
-                <TabsList className="grid w-full grid-cols-4 h-auto gap-1 p-1 bg-gray-100">
+                <TabsList className="grid w-full grid-cols-5 h-auto gap-1 p-1 bg-gray-100">
                   <TabsTrigger value="overview" className="flex items-center justify-center gap-1.5 py-2 data-[state=active]:shadow-sm data-[state=active]:text-blue-700">
                     <Users className="h-4 w-4" />
                     <span>Patient Details</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="appointments" className="flex items-center justify-center gap-1.5 py-2 data-[state=active]:shadow-sm data-[state=active]:text-green-700">
+                    <CalendarDays className="h-4 w-4" />
+                    <span>Appointments</span>
+                    {records.appointments.length > 0 && (
+                      <Badge className="ml-0.5 bg-green-100 text-green-700 border-0 px-1.5 py-0 text-[10px]">{records.appointments.length}</Badge>
+                    )}
                   </TabsTrigger>
                   <TabsTrigger value="lab" className="flex items-center justify-center gap-1.5 py-2 data-[state=active]:shadow-sm data-[state=active]:text-teal-700">
                     <Microscope className="h-4 w-4" />
@@ -1088,6 +1115,95 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
                       </div>
                     ))}
                   </div>
+                </TabsContent>
+
+                {/* Appointments & Billing */}
+                <TabsContent value="appointments" className="mt-4">
+                  {recordsLoading ? (
+                    <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-blue-500" /></div>
+                  ) : (() => {
+                    const now = new Date()
+                    const fmtMoney = (n) => `₹${(n ?? 0).toLocaleString('en-IN')}`
+                    const isUpcoming = (a) => new Date(a.appointmentDate) >= new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                      && !['cancelled', 'completed', 'no_show'].includes(a.status)
+                    const upcoming = records.appointments.filter(isUpcoming)
+                    const history = records.appointments.filter(a => !isUpcoming(a))
+                    const b = records.billing || { totalBilled: 0, totalPaid: 0, balanceDue: 0 }
+                    const statusColor = {
+                      scheduled: 'bg-blue-100 text-blue-700', confirmed: 'bg-indigo-100 text-indigo-700',
+                      checked_in: 'bg-cyan-100 text-cyan-700', in_progress: 'bg-amber-100 text-amber-700',
+                      completed: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700',
+                      no_show: 'bg-gray-200 text-gray-600', rescheduled: 'bg-purple-100 text-purple-700',
+                    }
+                    const ApptRow = ({ a, cancellable }) => (
+                      <div key={a.id} className="rounded-lg border p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{format(new Date(a.appointmentDate), 'dd MMM yyyy')}{a.appointmentTime ? `, ${a.appointmentTime}` : ''}</span>
+                            <Badge className={`border-0 capitalize ${statusColor[a.status] || 'bg-gray-100 text-gray-700'}`}>{a.status?.replace(/_/g, ' ')}</Badge>
+                            <Badge className="bg-gray-100 text-gray-600 border-0 capitalize">{a.appointmentType?.replace(/_/g, ' ')}</Badge>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {a.doctor?.fullName || 'Doctor —'}{a.department?.name ? ` · ${a.department.name}` : ''}
+                            {a.consultationFee != null ? ` · Fee ${fmtMoney(a.consultationFee)}` : ''}
+                          </p>
+                        </div>
+                        {cancellable && (
+                          <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 shrink-0"
+                            onClick={() => cancelAppointment(a)} disabled={cancellingId === a.id}>
+                            {cancellingId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><XCircle className="h-3.5 w-3.5 mr-1" />Cancel</>}
+                          </Button>
+                        )}
+                      </div>
+                    )
+                    return (
+                      <div className="space-y-4">
+                        {/* Billing summary */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-lg border p-3 bg-gray-50">
+                            <p className="text-xs text-gray-500 font-medium uppercase flex items-center gap-1"><IndianRupee className="h-3 w-3" />Total Billed</p>
+                            <p className="text-lg font-bold text-gray-800">{fmtMoney(b.totalBilled)}</p>
+                          </div>
+                          <div className="rounded-lg border p-3 bg-green-50">
+                            <p className="text-xs text-green-600 font-medium uppercase">Total Paid</p>
+                            <p className="text-lg font-bold text-green-700">{fmtMoney(b.totalPaid)}</p>
+                          </div>
+                          <div className="rounded-lg border p-3 bg-amber-50">
+                            <p className="text-xs text-amber-600 font-medium uppercase">Balance Due</p>
+                            <p className="text-lg font-bold text-amber-700">{fmtMoney(b.balanceDue)}</p>
+                          </div>
+                        </div>
+
+                        <ScrollArea className="h-[300px] pr-3">
+                          {records.appointments.length === 0 ? (
+                            <div className="text-center py-12 text-gray-500">
+                              <CalendarDays className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                              <p>No appointments yet</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5"><Clock className="h-4 w-4 text-green-600" />Upcoming ({upcoming.length})</h4>
+                                {upcoming.length === 0 ? (
+                                  <p className="text-sm text-gray-400 italic px-1">No upcoming appointments</p>
+                                ) : (
+                                  <div className="space-y-2">{upcoming.map(a => <ApptRow key={a.id} a={a} cancellable />)}</div>
+                                )}
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-700 mb-2">History ({history.length})</h4>
+                                {history.length === 0 ? (
+                                  <p className="text-sm text-gray-400 italic px-1">No past appointments</p>
+                                ) : (
+                                  <div className="space-y-2">{history.map(a => <ApptRow key={a.id} a={a} cancellable={false} />)}</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </ScrollArea>
+                      </div>
+                    )
+                  })()}
                 </TabsContent>
 
                 {/* Lab / Pathology */}

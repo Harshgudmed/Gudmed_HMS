@@ -2,7 +2,7 @@ import { Router } from 'express'
 import {
   getOrganization, updateOrganization,
   getUsers, createUser, updateUser, toggleUserStatus,
-  getDepartments, createDepartment,
+  getDepartments, createDepartment, getBillingServices,
 } from '../controllers/settingsController.js'
 
 const router = Router()
@@ -11,6 +11,7 @@ router.get('/', (req, res, next) => {
   const { resource } = req.query
   if (resource === 'users') return getUsers(req, res, next)
   if (resource === 'departments') return getDepartments(req, res, next)
+  if (resource === 'billingServices') return getBillingServices(req, res, next)
   return getOrganization(req, res, next)
 })
 

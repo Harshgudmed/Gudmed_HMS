@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import client from '@/api/client'
 import PatientFormSheet from '@/components/MobilePatientForm'
+import { toast } from 'sonner'
 import {
   ChevronLeft, Phone, MessageCircle, Mail, CalendarDays, Droplet, VenusAndMars,
   FlaskConical, Scan, BedDouble, ArrowLeft, ClipboardList, Pencil,
+  BadgeIndianRupee, XCircle, Clock3, Loader2,
 } from 'lucide-react'
 
 function shade(hex, percent) {
@@ -32,11 +34,24 @@ export default function MobilePatientDetail({ brandColor = '#2E4168' }) {
   const [patient, setPatient] = useState(state?.patient)
   const [showForm, setShowForm] = useState(false)
   const [records, setRecords] = useState(null)
+  const [cancellingId, setCancellingId] = useState(null)
 
-  useEffect(() => {
-    if (!id) return
-    client.get(`/patients/${id}/records`).then(res => setRecords(res?.data || {})).catch(() => setRecords({}))
-  }, [id])
+  const fetchRecords = () => {
+    if (!id) return Promise.resolve()
+    return client.get(`/patients/${id}/records`).then(res => setRecords(res?.data || {})).catch(() => setRecords({}))
+  }
+  useEffect(() => { fetchRecords() /* eslint-disable-next-line */ }, [id])
+
+  const cancelAppointment = async (appt) => {
+    if (!window.confirm('Cancel this appointment?')) return
+    setCancellingId(appt.id)
+    try {
+      const res = await client.patch(`/appointments/${appt.id}`, { status: 'cancelled' })
+      if (res?.success !== false) { toast.success('Appointment cancelled'); await fetchRecords() }
+      else toast.error(res.error || 'Failed to cancel')
+    } catch (e) { toast.error(e.message || 'Failed to cancel') }
+    finally { setCancellingId(null) }
+  }
 
   if (!patient) {
     return (
@@ -57,6 +72,19 @@ export default function MobilePatientDetail({ brandColor = '#2E4168' }) {
   const labs = records?.labOrders || []
   const rads = records?.radiologyOrders || []
   const adms = records?.admissions || []
+  const appts = records?.appointments || []
+  const billing = records?.billing || null
+  const rupee = (n) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+  const isUpcoming = (ap) => new Date(ap.appointmentDate) >= todayStart && !['cancelled', 'completed', 'no_show'].includes(ap.status)
+  const upcoming = appts.filter(isUpcoming)
+  const history = appts.filter(ap => !isUpcoming(ap))
+  const statusTint = {
+    scheduled: 'bg-blue-50 text-blue-600', confirmed: 'bg-indigo-50 text-indigo-600',
+    checked_in: 'bg-cyan-50 text-cyan-600', in_progress: 'bg-amber-50 text-amber-600',
+    completed: 'bg-emerald-50 text-emerald-600', cancelled: 'bg-rose-50 text-rose-600',
+    no_show: 'bg-gray-100 text-gray-500', rescheduled: 'bg-violet-50 text-violet-600',
+  }
 
   return (
     <div className="pb-3">
@@ -108,6 +136,72 @@ export default function MobilePatientDetail({ brandColor = '#2E4168' }) {
           <InfoCard Icon={Droplet} label="Blood group" value={patient.bloodGroup || '—'} brandColor={brandColor} />
           <InfoCard Icon={Phone} label="Phone" value={patient.phonePrimary || '—'} brandColor={brandColor} />
         </div>
+      </div>
+
+      {/* Appointments & Billing */}
+      <div className="px-4 mt-6">
+        <h2 className="text-[15px] font-bold text-gray-900 mb-3">Appointments &amp; Billing</h2>
+
+        {/* Billing summary */}
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="rounded-2xl bg-white p-3 elev-1 border border-gray-100/70 text-center">
+            <div className="flex items-center justify-center gap-1 text-gray-400"><BadgeIndianRupee className="h-3.5 w-3.5" /><span className="text-[10px] font-medium">Billed</span></div>
+            <p className="mt-1 text-sm font-extrabold text-gray-800">{rupee(billing?.totalBilled)}</p>
+          </div>
+          <div className="rounded-2xl bg-emerald-50 p-3 border border-emerald-100 text-center">
+            <p className="text-[10px] font-medium text-emerald-600">Paid</p>
+            <p className="mt-1 text-sm font-extrabold text-emerald-700">{rupee(billing?.totalPaid)}</p>
+          </div>
+          <div className="rounded-2xl bg-amber-50 p-3 border border-amber-100 text-center">
+            <p className="text-[10px] font-medium text-amber-600">Balance</p>
+            <p className="mt-1 text-sm font-extrabold text-amber-700">{rupee(billing?.balanceDue)}</p>
+          </div>
+        </div>
+
+        {records !== null && (
+          <>
+            {/* Upcoming */}
+            <div className="mt-4">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-emerald-600" />Upcoming ({upcoming.length})</h3>
+              {upcoming.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No upcoming appointments</p>
+              ) : (
+                <div className="space-y-2">
+                  {upcoming.map(ap => (
+                    <div key={ap.id} className="rounded-xl bg-white p-3 elev-1 border border-gray-100/70">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-800">{fmtDate(ap.appointmentDate)}{ap.appointmentTime ? ` · ${ap.appointmentTime}` : ''}</p>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${statusTint[ap.status] || 'bg-gray-100 text-gray-500'}`}>{ap.status?.replace(/_/g, ' ')}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{ap.doctor?.fullName || 'Doctor —'}{ap.department?.name ? ` · ${ap.department.name}` : ''}{ap.consultationFee != null ? ` · ${rupee(ap.consultationFee)}` : ''}</p>
+                      <button onClick={() => cancelAppointment(ap)} disabled={cancellingId === ap.id} className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 py-1.5 text-xs font-semibold text-rose-600 active:scale-95 transition disabled:opacity-60">
+                        {cancellingId === ap.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* History */}
+            {history.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">History ({history.length})</h3>
+                <div className="space-y-2">
+                  {history.slice(0, 8).map(ap => (
+                    <div key={ap.id} className="flex items-center justify-between gap-2 rounded-xl bg-white p-3 elev-1 border border-gray-100/70">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{fmtDate(ap.appointmentDate)} · {ap.doctor?.fullName || '—'}</p>
+                        <p className="text-[11px] text-gray-400 capitalize">{ap.appointmentType?.replace(/_/g, ' ')}{ap.consultationFee != null ? ` · ${rupee(ap.consultationFee)}` : ''}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${statusTint[ap.status] || 'bg-gray-100 text-gray-500'}`}>{ap.status?.replace(/_/g, ' ')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Medical records */}

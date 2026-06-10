@@ -193,11 +193,15 @@ export async function deleteSlab(req, res, next) {
 export async function calculateFee(req, res, next) {
   try {
     const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
-    const { doctorId, patientId } = req.query
+    const { doctorId, patientId, date } = req.query
 
     if (!doctorId || !patientId) {
       return res.status(400).json({ success: false, error: 'doctorId and patientId required' })
     }
+
+    // Reference date for the visit being booked. Days-since-last-visit is measured
+    // against this so the preview matches what the booking endpoint actually charges.
+    const targetDate = date ? new Date(date) : new Date()
 
     // Get doctor's base fee (for new patients)
     const doctor = await db.user.findFirst({
@@ -209,28 +213,29 @@ export async function calculateFee(req, res, next) {
       return res.status(404).json({ success: false, error: 'Doctor not found' })
     }
 
-    // Find last completed/no-show appointment with this doctor
-    const lastAppointment = await db.appointment.findFirst({
+    // Anchor: the patient's most recent NEW-PATIENT visit with this doctor.
+    // Follow-up pricing is measured from this visit, matching the booking endpoint.
+    const lastNewVisit = await db.appointment.findFirst({
       where: {
         organizationId: ORG_ID,
         patientId,
         doctorId,
+        appointmentType: 'new_patient',
         status: { notIn: ['cancelled', 'rescheduled'] },
-        appointmentDate: { lt: new Date() },
+        appointmentDate: { lt: targetDate },
       },
       orderBy: { appointmentDate: 'desc' },
       select: { appointmentDate: true },
     })
 
-    // Calculate days since last visit
+    // Calculate days since the anchoring new-patient visit
     let daysSinceLastVisit = null
     let appliedSlab = null
     let fee = doctor.consultationFee || 500 // default to 500 if no consultation fee set
 
-    if (lastAppointment) {
-      const now = new Date()
-      const lastVisit = new Date(lastAppointment.appointmentDate)
-      daysSinceLastVisit = Math.floor((now - lastVisit) / (1000 * 60 * 60 * 24))
+    if (lastNewVisit) {
+      const lastVisit = new Date(lastNewVisit.appointmentDate)
+      daysSinceLastVisit = Math.floor((targetDate - lastVisit) / (1000 * 60 * 60 * 24))
 
       // If more than 30 days, treat as new patient
       if (daysSinceLastVisit > 30) {
@@ -274,7 +279,7 @@ export async function calculateFee(req, res, next) {
         fee,
         daysSinceLastVisit,
         appliedSlab,
-        isNewPatient: !lastAppointment || daysSinceLastVisit > 30,
+        isNewPatient: !lastNewVisit || daysSinceLastVisit > 30,
       },
     })
   } catch (err) {

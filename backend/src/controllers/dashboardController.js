@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { scopedDoctorId } from '../utils/scope.js'
 
 export async function getDashboard(req, res, next) {
   try {
@@ -8,6 +9,19 @@ export async function getDashboard(req, res, next) {
     todayStart.setHours(0, 0, 0, 0)
     const todayEnd = new Date(today)
     todayEnd.setHours(23, 59, 59, 999)
+
+    // When a doctor is logged in, the dashboard shows ONLY their own data:
+    // their patients, their appointments, their prescriptions/lab orders, their queue.
+    const myDoctorId = scopedDoctorId(req)
+    const isDoctor = Boolean(myDoctorId)
+
+    // A doctor's "own patients" = those they have an appointment or consultation with.
+    const patientOwnFilter = isDoctor
+      ? { OR: [ { appointments: { some: { doctorId: myDoctorId } } }, { consultations: { some: { doctorId: myDoctorId } } } ] }
+      : {}
+    const patientWhere = { organizationId: ORG_ID, isActive: true, ...patientOwnFilter }
+    const apptDoctor  = isDoctor ? { doctorId: myDoctorId } : {}
+    const queueDoctor = isDoctor ? { assignedToId: myDoctorId } : {}
 
     const [
       totalPatients,
@@ -20,25 +34,25 @@ export async function getDashboard(req, res, next) {
       waitingQueue,
       criticalLabResults,
     ] = await Promise.all([
-      db.patient.count({ where: { organizationId: ORG_ID, isActive: true } }),
+      db.patient.count({ where: patientWhere }),
       db.appointment.count({
         where: {
           organizationId: ORG_ID,
           appointmentDate: { gte: todayStart, lte: todayEnd },
+          ...apptDoctor,
         },
       }),
       db.labOrder.count({
-        where: { organizationId: ORG_ID, status: { in: ['pending', 'sample_collected', 'in_progress'] } },
+        where: { organizationId: ORG_ID, status: { in: ['pending', 'sample_collected', 'in_progress'] }, ...(isDoctor ? { requestedById: myDoctorId } : {}) },
       }),
-      db.prescription.count({ where: { organizationId: ORG_ID, status: 'pending' } }),
-      db.payment.aggregate({
-        where: {
-          organizationId: ORG_ID,
-          paymentDate: { gte: todayStart, lte: todayEnd },
-          isRefund: false,
-        },
-        _sum: { amount: true },
-      }),
+      db.prescription.count({ where: { organizationId: ORG_ID, status: 'pending', ...(isDoctor ? { doctorId: myDoctorId } : {}) } }),
+      // Revenue is a hospital metric, not a doctor metric — doctors get 0.
+      isDoctor
+        ? Promise.resolve({ _sum: { amount: 0 } })
+        : db.payment.aggregate({
+            where: { organizationId: ORG_ID, paymentDate: { gte: todayStart, lte: todayEnd }, isRefund: false },
+            _sum: { amount: true },
+          }),
       db.bed.count({ where: { organizationId: ORG_ID, status: 'occupied' } }),
       db.bed.count({ where: { organizationId: ORG_ID } }),
       db.queueManagement.count({
@@ -46,14 +60,16 @@ export async function getDashboard(req, res, next) {
           organizationId: ORG_ID,
           status: 'waiting',
           joinedQueueAt: { gte: todayStart, lte: todayEnd },
+          ...queueDoctor,
         },
       }),
-      db.labResult.count({ where: { isCritical: true, verifiedAt: null } }),
+      // Critical alerts scoped to the doctor's own lab orders; org-wide otherwise.
+      db.labResult.count({ where: { isCritical: true, verifiedAt: null, ...(isDoctor ? { order: { requestedById: myDoctorId } } : {}) } }),
     ])
 
     const appointmentStatusGroups = await db.appointment.groupBy({
       by: ['status'],
-      where: { organizationId: ORG_ID, appointmentDate: { gte: todayStart, lte: todayEnd } },
+      where: { organizationId: ORG_ID, appointmentDate: { gte: todayStart, lte: todayEnd }, ...apptDoctor },
       _count: true,
     })
 
@@ -63,12 +79,13 @@ export async function getDashboard(req, res, next) {
         organizationId: ORG_ID,
         status: { in: ['waiting', 'called', 'in_service'] },
         joinedQueueAt: { gte: todayStart, lte: todayEnd },
+        ...queueDoctor,
       },
       _count: true,
     })
 
     const recentPatients = await db.patient.findMany({
-      where: { organizationId: ORG_ID, isActive: true },
+      where: patientWhere,
       take: 5,
       orderBy: { createdAt: 'desc' },
       select: { id: true, mrn: true, firstName: true, lastName: true, gender: true, dateOfBirth: true, createdAt: true },
@@ -79,6 +96,7 @@ export async function getDashboard(req, res, next) {
         organizationId: ORG_ID,
         status: { in: ['scheduled', 'confirmed'] },
         appointmentDate: { gte: todayStart },
+        ...apptDoctor,
       },
       take: 10,
       orderBy: [{ appointmentDate: 'asc' }, { appointmentTime: 'asc' }],
@@ -92,6 +110,7 @@ export async function getDashboard(req, res, next) {
         organizationId: ORG_ID,
         status: { in: ['waiting', 'called', 'in_service'] },
         joinedQueueAt: { gte: todayStart, lte: todayEnd },
+        ...queueDoctor,
       },
       take: 20,
       orderBy: { queueNumber: 'asc' },

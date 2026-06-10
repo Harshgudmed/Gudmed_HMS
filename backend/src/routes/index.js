@@ -1,6 +1,8 @@
 import { Router } from 'express'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, authorize, requirePatient } from '../middleware/auth.js'
 import authRoutes from './authRoutes.js'
+import patientPortalRoutes from './patientPortalRoutes.js'
+import patientCrmRoutes from './patientCrmRoutes.js'
 import dashboardRoutes from './dashboardRoutes.js'
 import preTriageRoutes from './preTriageRoutes.js'
 import triageRoutes from './triageRoutes.js'
@@ -32,21 +34,36 @@ router.use(authenticate)
 
 router.get('/', (_req, res) => res.json({ message: 'Hospital Management API', version: '1.0.0' }))
 
-router.use('/dashboard', dashboardRoutes)
-router.use('/pre-triage', preTriageRoutes)
-router.use('/triage', triageRoutes)
-router.use('/appointments', appointmentRoutes)
-router.use('/patients', patientRoutes)
-router.use('/consultations', consultationRoutes)
-router.use('/settings', settingsRoutes)
-router.use('/pharmacy', pharmacyRoutes)
-router.use('/laboratory', laboratoryRoutes)
-router.use('/radiology', radiologyRoutes)
-router.use('/inpatient', inpatientRoutes)
-router.use('/billing', billingRoutes)
-router.use('/death-certificates', deathCertificateRoutes)
-router.use('/doctor-accountability', doctorAccountabilityRoutes)
-router.use('/fee-slabs', feeSlabRoutes)
-router.use('/notifications', notificationRoutes)
-router.use('/payments',      paymentRoutes)
-router.use('/analytics',     analyticsRoutes)
+// Access model (v1):
+//  - `authenticate` above already requires a valid login on every route (401 otherwise).
+//  - What each role can *navigate to* is controlled by the frontend sidebar (roleConfig).
+//  - Real per-doctor isolation is enforced by DATA SCOPING in the controllers: a doctor
+//    only ever sees their own patients / appointments / consultations.
+// We deliberately do NOT hard-block these endpoints by role, because the clinical screens
+// are interconnected — e.g. a doctor's Consultation reads /pharmacy/drugs, /laboratory and
+// /radiology to prescribe & order, Doctor Accountability reads /fee-slabs, and the shared
+// Queue reads /appointments and /billing. Per-endpoint role hardening is a later refinement.
+// Patient portal — patient-session only, scoped to their own record.
+router.use('/patient-portal',        requirePatient, patientPortalRoutes)
+
+// Patient CRM — staff who assign/route patients (and CRM users themselves).
+router.use('/patient-crm',           authorize(), patientCrmRoutes)
+
+router.use('/dashboard',             authorize(), dashboardRoutes)
+router.use('/pre-triage',            authorize(), preTriageRoutes)
+router.use('/triage',                authorize(), triageRoutes)
+router.use('/appointments',          authorize(), appointmentRoutes)
+router.use('/patients',              authorize(), patientRoutes)
+router.use('/consultations',         authorize(), consultationRoutes)
+router.use('/settings',              authorize(), settingsRoutes)
+router.use('/pharmacy',              authorize(), pharmacyRoutes)
+router.use('/laboratory',            authorize(), laboratoryRoutes)
+router.use('/radiology',             authorize(), radiologyRoutes)
+router.use('/inpatient',             authorize(), inpatientRoutes)
+router.use('/billing',               authorize(), billingRoutes)
+router.use('/death-certificates',    authorize(), deathCertificateRoutes)
+router.use('/doctor-accountability', authorize(), doctorAccountabilityRoutes)
+router.use('/fee-slabs',             authorize(), feeSlabRoutes)
+router.use('/notifications',         authorize(), notificationRoutes)
+router.use('/payments',              authorize(), paymentRoutes)
+router.use('/analytics',             authorize(), analyticsRoutes)

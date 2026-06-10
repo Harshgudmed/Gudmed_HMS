@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import bcrypt from 'bcryptjs'
 
 function parseOrg(org) {
   if (!org) return org
@@ -41,14 +42,19 @@ export async function getUsers(req, res, next) {
       include: { department: { select: { id: true, name: true } } },
       orderBy: { fullName: 'asc' },
     })
-    res.json({ success: true, data: users })
+    // Never expose password hashes to the client.
+    const safe = users.map(({ passwordHash, ...u }) => u)
+    res.json({ success: true, data: safe })
   } catch (err) { next(err) }
 }
 
 export async function createUser(req, res, next) {
   try {
     const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
-    const { fullName, email, role, departmentId, phone, specialization } = req.body
+    const { fullName, email, role, departmentId, phone, specialization, password } = req.body
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, error: 'A password of at least 6 characters is required so the user can log in' })
+    }
     const existing = await db.user.findUnique({ where: { email } })
     if (existing) return res.status(400).json({ success: false, error: 'Email already in use' })
     const user = await db.user.create({
@@ -57,6 +63,7 @@ export async function createUser(req, res, next) {
         fullName,
         email,
         role,
+        passwordHash: await bcrypt.hash(password, 10),
         departmentId: departmentId || null,
         phone: phone || null,
         specialization: specialization || null,
@@ -64,19 +71,30 @@ export async function createUser(req, res, next) {
       },
       include: { department: { select: { id: true, name: true } } },
     })
-    res.json({ success: true, data: user })
+    // Never return the hash to the client.
+    const { passwordHash, ...safe } = user
+    res.json({ success: true, data: safe })
   } catch (err) { next(err) }
 }
 
 export async function updateUser(req, res, next) {
   try {
-    const { id, fullName, email, role, departmentId, phone, specialization } = req.body
+    const { id, fullName, email, role, departmentId, phone, specialization, password } = req.body
+    const data = { fullName, email, role, departmentId: departmentId || null, phone: phone || null, specialization: specialization || null }
+    // Optional password reset — only re-hash when a new password is supplied.
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' })
+      }
+      data.passwordHash = await bcrypt.hash(password, 10)
+    }
     const user = await db.user.update({
       where: { id },
-      data: { fullName, email, role, departmentId: departmentId || null, phone: phone || null, specialization: specialization || null },
+      data,
       include: { department: { select: { id: true, name: true } } },
     })
-    res.json({ success: true, data: user })
+    const { passwordHash, ...safe } = user
+    res.json({ success: true, data: safe })
   } catch (err) { next(err) }
 }
 
@@ -107,5 +125,16 @@ export async function createDepartment(req, res, next) {
       data: { organizationId: ORG_ID, name, description: description || null },
     })
     res.json({ success: true, data: dept })
+  } catch (err) { next(err) }
+}
+
+export async function getBillingServices(req, res, next) {
+  try {
+    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const services = await db.billingService.findMany({
+      where: { organizationId: ORG_ID, isActive: true },
+      orderBy: [{ serviceCategory: 'asc' }, { serviceName: 'asc' }],
+    })
+    res.json({ success: true, data: services })
   } catch (err) { next(err) }
 }

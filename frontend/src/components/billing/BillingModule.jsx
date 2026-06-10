@@ -98,6 +98,23 @@ const CAT_META = {
 
 const BILLING_ITEMS_PER_PAGE = 10
 
+const DEMO_CLAIMS = [
+  { id: 'CLM-001', patient: 'Rajesh Kumar',    insurer: 'Star Health Insurance',   policy: 'SH-4521-2025', amount: 28500, approved: 26000, status: 'Approved',  submitted: '02 Jun 2026', settled: '08 Jun 2026' },
+  { id: 'CLM-002', patient: 'Sunita Verma',    insurer: 'HDFC ERGO',               policy: 'HE-8821-2025', amount: 15200, approved: null,  status: 'Pending',   submitted: '05 Jun 2026', settled: null },
+  { id: 'CLM-003', patient: 'Mohd. Arif',      insurer: 'New India Assurance',     policy: 'NIA-2234-25',  amount: 42000, approved: 42000, status: 'Approved',  submitted: '28 May 2026', settled: '04 Jun 2026' },
+  { id: 'CLM-004', patient: 'Priya Sharma',    insurer: 'Bajaj Allianz Health',    policy: 'BA-9900-2025', amount: 8700,  approved: null,  status: 'Under Review', submitted: '06 Jun 2026', settled: null },
+  { id: 'CLM-005', patient: 'Deepak Singh',    insurer: 'ICICI Lombard',           policy: 'IL-3345-2025', amount: 19800, approved: null,  status: 'Rejected',  submitted: '20 May 2026', settled: null },
+  { id: 'CLM-006', patient: 'Kavita Joshi',    insurer: 'Star Health Insurance',   policy: 'SH-7723-2025', amount: 33500, approved: 31000, status: 'Approved',  submitted: '01 Jun 2026', settled: '07 Jun 2026' },
+  { id: 'CLM-007', patient: 'Anil Mehra',      insurer: 'United India Insurance',  policy: 'UI-5512-2025', amount: 11200, approved: null,  status: 'Pending',   submitted: '09 Jun 2026', settled: null },
+]
+
+const CLAIM_STATUS_STYLE = {
+  'Approved':     'bg-green-100 text-green-800',
+  'Pending':      'bg-yellow-100 text-yellow-800',
+  'Under Review': 'bg-blue-100 text-blue-800',
+  'Rejected':     'bg-red-100 text-red-800',
+}
+
 const DEFAULT_CLINIC = {
   doctorName: 'Dr. Abebe Kebede', qualification: 'MBBS, MD (General Medicine)',
   clinicName: 'Hospital', address: '', phone: '', regNo: '', gstNo: '',
@@ -212,23 +229,29 @@ export default function BillingModule({ onBack }) {
             items, discount: inv.discountPercentage || 0, gstPct: 0,
             subtotal: inv.subtotal, discountAmt: inv.discountAmount,
             gstAmt: inv.taxAmount || 0, total: inv.totalAmount,
-            createdAt: inv.invoiceDate,
+            createdAt: inv.invoiceDate || inv.createdAt,
           }
         })
         setBills(mapped)
-
-        // Compute stats
-        const todayStr2 = new Date().toDateString()
-        const todayBills = mapped.filter(b => new Date(b.createdAt).toDateString() === todayStr2)
-        const todayRevenue = todayBills.filter(b => b.paid).reduce((a, b) => a + b.total, 0)
-        const collectedToday = todayBills.filter(b => b.paid).reduce((a, b) => a + b.total, 0)
-        const pendingCount = mapped.filter(b => !b.paid).length
-        const outstanding = mapped.filter(b => !b.paid).reduce((a, b) => a + b.total, 0)
-        setStats({ todayRevenue, pendingCount, collectedToday, outstanding })
       }
     } catch { /* silent */ }
     finally { setBillsLoading(false) }
   }, [invoicesPage])
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await client.get('/billing', { params: { resource: 'stats' } })
+      if (res.success) {
+        const s = res.data
+        setStats({
+          todayRevenue:  s.todayRevenue       || 0,
+          pendingCount:  s.pendingInvoices    || 0,
+          collectedToday: s.collectedToday    || 0,
+          outstanding:   s.outstandingBalance || 0,
+        })
+      }
+    } catch { /* silent */ }
+  }, [])
 
   const fetchPayments = useCallback(async () => {
     setPaymentsLoading(true)
@@ -254,7 +277,8 @@ export default function BillingModule({ onBack }) {
     fetchBills()
     fetchPayments()
     fetchServices()
-  }, [fetchBills, fetchPayments, fetchServices])
+    fetchStats()
+  }, [fetchBills, fetchPayments, fetchServices, fetchStats])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -492,6 +516,7 @@ export default function BillingModule({ onBack }) {
       toast.success('Payment recorded!')
       fetchBills()
       fetchPayments()
+      fetchStats()
     } catch { toast.error('Failed to record payment') }
   }
 
@@ -560,6 +585,130 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
     win.document.close()
     win.focus()
     setTimeout(() => win.print(), 500)
+  }
+
+  // ── Print payment receipt ──────────────────────────────────────────────────
+  function printReceipt(p) {
+    const win = window.open('', '_blank', 'width=480,height=680')
+    if (!win) { toast.error('Allow pop-ups to print'); return }
+
+    const patientName = p.invoice?.patient
+      ? `${p.invoice.patient.firstName} ${p.invoice.patient.lastName}`
+      : (p.patient ? `${p.patient.firstName} ${p.patient.lastName}` : 'Patient')
+    const mrn     = p.invoice?.patient?.mrn || p.patient?.mrn || ''
+    const rxDate  = p.paymentDate ? format(new Date(p.paymentDate), 'dd MMM yyyy, hh:mm aa') : format(new Date(), 'dd MMM yyyy, hh:mm aa')
+    const invNo   = p.invoice?.invoiceNumber || '—'
+    const hospName  = orgInfo.name   || clinic.clinicName || 'Hospital'
+    const hospAddr  = clinic.address || orgInfo.address   || ''
+    const hospPhone = clinic.phone   || orgInfo.phone     || ''
+    const hospEmail = orgInfo.email  || ''
+    const regNo     = clinic.regNo   || ''
+    const upi       = clinic.upiId   || ''
+
+    const html = `<!DOCTYPE html>
+<html><head><title>Receipt ${p.receiptNumber}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Courier New', monospace; font-size: 11pt; color: #111; background: #fff; padding: 0; }
+  .page { max-width: 360px; margin: 0 auto; padding: 18px 20px; }
+
+  /* Header */
+  .hosp-name { font-size: 16pt; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+  .hosp-sub  { font-size: 8.5pt; text-align: center; color: #444; margin-top: 2px; line-height: 1.5; }
+  .divider   { border: none; border-top: 1px dashed #666; margin: 8px 0; }
+  .divider-solid { border: none; border-top: 2px solid #111; margin: 8px 0; }
+
+  /* Title */
+  .receipt-title { text-align: center; font-size: 13pt; font-weight: 700; letter-spacing: 3px; margin: 6px 0; }
+
+  /* Info rows */
+  .row { display: flex; justify-content: space-between; font-size: 9.5pt; margin: 3px 0; }
+  .row .lbl { color: #555; }
+  .row .val { font-weight: 600; text-align: right; }
+
+  /* Amount box */
+  .amount-box { background: #111; color: #fff; text-align: center; padding: 10px 0; margin: 10px 0; border-radius: 2px; }
+  .amount-box .amt-label { font-size: 8pt; letter-spacing: 2px; text-transform: uppercase; opacity: 0.7; }
+  .amount-box .amt-value { font-size: 22pt; font-weight: 700; }
+
+  /* Method */
+  .method-badge { display: inline-block; background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; padding: 3px 12px; border-radius: 20px; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* Footer */
+  .footer { text-align: center; font-size: 8pt; color: #666; margin-top: 10px; line-height: 1.6; }
+  .thank-you { text-align: center; font-size: 11pt; font-weight: 700; margin: 8px 0 4px; }
+
+  @media print {
+    body { padding: 0; }
+    .page { max-width: 100%; padding: 10px 14px; }
+    button { display: none; }
+  }
+</style>
+</head><body>
+<div class="page">
+
+  <!-- Hospital Header -->
+  <div class="hosp-name">${hospName}</div>
+  <div class="hosp-sub">
+    ${hospAddr ? hospAddr + '<br/>' : ''}
+    ${hospPhone ? 'Ph: ' + hospPhone : ''}${hospEmail ? ' | ' + hospEmail : ''}
+    ${regNo ? '<br/>Reg. No: ' + regNo : ''}
+  </div>
+
+  <hr class="divider-solid" style="margin-top:10px"/>
+
+  <div class="receipt-title">PAYMENT RECEIPT</div>
+
+  <hr class="divider"/>
+
+  <!-- Receipt Details -->
+  <div class="row"><span class="lbl">Receipt No.</span><span class="val">${p.receiptNumber}</span></div>
+  <div class="row"><span class="lbl">Date & Time</span><span class="val">${rxDate}</span></div>
+  <div class="row"><span class="lbl">Invoice No.</span><span class="val">${invNo}</span></div>
+
+  <hr class="divider"/>
+
+  <!-- Patient Details -->
+  <div class="row"><span class="lbl">Patient Name</span><span class="val">${patientName}</span></div>
+  ${mrn ? `<div class="row"><span class="lbl">UHID / MRN</span><span class="val">${mrn}</span></div>` : ''}
+
+  <hr class="divider"/>
+
+  <!-- Amount -->
+  <div class="amount-box">
+    <div class="amt-label">Amount Paid</div>
+    <div class="amt-value">₹${Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+  </div>
+
+  <!-- Payment Method -->
+  <div style="text-align:center; margin: 6px 0;">
+    <span class="method-badge">${p.paymentMethod}</span>
+  </div>
+
+  <hr class="divider"/>
+
+  <!-- UPI / Bank info if available -->
+  ${upi ? `<div class="row"><span class="lbl">UPI ID</span><span class="val">${upi}</span></div>` : ''}
+  ${clinic.bankName ? `<div class="row"><span class="lbl">Bank</span><span class="val">${clinic.bankName}</span></div>` : ''}
+
+  <hr class="divider"/>
+
+  <div class="thank-you">Thank you for your payment!</div>
+  <div class="footer">
+    This is a computer-generated receipt.<br/>
+    No signature required.<br/>
+    ${hospName} · gudmed.in
+  </div>
+
+  <hr class="divider" style="margin-top:14px"/>
+</div>
+
+<script>window.onload = function() { window.print() }<\/script>
+</body></html>`
+
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
   }
 
   // ── Add service to catalog ─────────────────────────────────────────────────
@@ -667,7 +816,7 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
             {[
               { label: 'Today Revenue', value: fmt(stats.todayRevenue), color: 'text-green-600', bg: 'bg-green-50' },
               { label: 'Pending Invoices', value: stats.pendingCount, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-              { label: 'Collected Today', value: fmt(stats.collectedToday), color: 'text-blue-600', bg: 'bg-blue-50' },
+              // { label: 'Collected Today', value: fmt(stats.collectedToday), color: 'text-blue-600', bg: 'bg-blue-50' },
               { label: 'Outstanding Balance', value: fmt(stats.outstanding), color: 'text-red-600', bg: 'bg-red-50' },
             ].map(s => (
               <Card key={s.label} className={s.bg}>
@@ -979,11 +1128,12 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
                         <TableHead>Method</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Print</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {payments.length === 0 ? (
-                        <TableRow><TableCell colSpan={7} className="text-center py-10 text-gray-400">No payment records yet</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={8} className="text-center py-10 text-gray-400">No payment records yet</TableCell></TableRow>
                       ) : payments.slice((paymentsPage - 1) * BILLING_ITEMS_PER_PAGE, paymentsPage * BILLING_ITEMS_PER_PAGE).map(p => (
                         <TableRow key={p.id}>
                           <TableCell className="font-mono text-sm text-blue-600">{p.receiptNumber}</TableCell>
@@ -993,6 +1143,11 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
                           <TableCell><Badge className="bg-blue-100 text-blue-800">{p.paymentMethod}</Badge></TableCell>
                           <TableCell className="text-sm text-gray-500">{p.paymentDate ? format(new Date(p.paymentDate), 'dd MMM yyyy') : '—'}</TableCell>
                           <TableCell><Badge className="bg-green-100 text-green-800">Received</Badge></TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline" onClick={() => printReceipt(p)}>
+                              <Printer className="h-3.5 w-3.5 mr-1" />Receipt
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1061,25 +1216,54 @@ ${bill.notes ? `<div style="background:#f8fafc;border:1px solid #eee;border-radi
               <CardDescription>Track and manage insurance claims and reimbursements</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-4 gap-4 mb-6">
                 <div className="bg-blue-50 rounded-lg p-4 text-center">
-                  <p className="text-sm text-blue-600 font-medium">Total Insured Patients</p>
-                  <p className="text-3xl font-bold text-blue-700">{bills.filter(b => b.payMode === 'Insurance').length}</p>
+                  <p className="text-sm text-blue-600 font-medium">Total Claims</p>
+                  <p className="text-3xl font-bold text-blue-700">{DEMO_CLAIMS.length}</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-4 text-center">
-                  <p className="text-sm text-green-600 font-medium">CBHI Claims</p>
-                  <p className="text-3xl font-bold text-green-700">0</p>
+                  <p className="text-sm text-green-600 font-medium">Approved</p>
+                  <p className="text-3xl font-bold text-green-700">{DEMO_CLAIMS.filter(c => c.status === 'Approved').length}</p>
                 </div>
-                <div className="bg-orange-50 rounded-lg p-4 text-center">
-                  <p className="text-sm text-orange-600 font-medium">Pending Claims</p>
-                  <p className="text-3xl font-bold text-orange-700">0</p>
+                <div className="bg-yellow-50 rounded-lg p-4 text-center">
+                  <p className="text-sm text-yellow-600 font-medium">Pending / Review</p>
+                  <p className="text-3xl font-bold text-yellow-700">{DEMO_CLAIMS.filter(c => c.status === 'Pending' || c.status === 'Under Review').length}</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-4 text-center">
+                  <p className="text-sm text-red-600 font-medium">Rejected</p>
+                  <p className="text-3xl font-bold text-red-700">{DEMO_CLAIMS.filter(c => c.status === 'Rejected').length}</p>
                 </div>
               </div>
-              <div className="text-center py-10 text-gray-400">
-                <Shield className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p className="font-medium">Insurance claims will appear here</p>
-                <p className="text-sm mt-1">Claims are created automatically when invoices are paid via Insurance</p>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Claim #</TableHead>
+                    <TableHead>Patient</TableHead>
+                    <TableHead>Insurance Company</TableHead>
+                    <TableHead>Policy No.</TableHead>
+                    <TableHead className="text-right">Claimed</TableHead>
+                    <TableHead className="text-right">Approved</TableHead>
+                    <TableHead>Submitted</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {DEMO_CLAIMS.map(c => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-mono text-sm text-blue-600">{c.id}</TableCell>
+                      <TableCell className="font-medium">{c.patient}</TableCell>
+                      <TableCell className="text-sm">{c.insurer}</TableCell>
+                      <TableCell className="font-mono text-xs text-gray-500">{c.policy}</TableCell>
+                      <TableCell className="text-right font-semibold">{fmt(c.amount)}</TableCell>
+                      <TableCell className="text-right font-semibold text-green-700">{c.approved ? fmt(c.approved) : '—'}</TableCell>
+                      <TableCell className="text-sm text-gray-500">{c.submitted}</TableCell>
+                      <TableCell>
+                        <Badge className={CLAIM_STATUS_STYLE[c.status] || 'bg-gray-100 text-gray-800'}>{c.status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>

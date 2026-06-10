@@ -1,6 +1,45 @@
 import { db } from '../config/db.js'
 import { z } from 'zod'
 
+const AUTH_ENFORCED = process.env.AUTH_ENFORCED === 'true'
+
+// Doctors only see their own patients — those they have an appointment or consultation
+// with. Returns a Prisma `where` fragment for the doctor, or null for every other role
+// (and while AUTH_ENFORCED is off, so behaviour is unchanged until we flip the flag).
+function doctorPatientFilter(req) {
+  if (!AUTH_ENFORCED) return null
+  if (req.user?.role !== 'doctor') return null
+  const doctorId = req.user.userId
+  return {
+    OR: [
+      { appointments:  { some: { doctorId } } },
+      { consultations: { some: { doctorId } } },
+    ],
+  }
+}
+
+// Patient CRM users see only patients assigned to them.
+function crmScopeId(req) {
+  if (!AUTH_ENFORCED) return null
+  if (req.user?.role !== 'patient_crm') return null
+  return req.user.userId
+}
+
+// True when this doctor is linked to the given patient. Used to gate single-patient reads.
+async function doctorOwnsPatient(doctorId, patientId) {
+  const match = await db.patient.findFirst({
+    where: {
+      id: patientId,
+      OR: [
+        { appointments:  { some: { doctorId } } },
+        { consultations: { some: { doctorId } } },
+      ],
+    },
+    select: { id: true },
+  })
+  return Boolean(match)
+}
+
 function generateUHID() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
   const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
@@ -60,6 +99,17 @@ export async function getAll(req, res, next) {
       ]
     }
 
+    // Doctors are limited to their own patients. Combine with any search filter via AND
+    // so we don't clobber the search OR above.
+    const docFilter = doctorPatientFilter(req)
+    if (docFilter) {
+      where.AND = [...(where.AND || []), docFilter]
+    }
+
+    // Patient CRM users see only the patients assigned to them.
+    const crmId = crmScopeId(req)
+    if (crmId) where.assignedCrmUserId = crmId
+
     const [patients, total] = await Promise.all([
       db.patient.findMany({ where, take: limit, skip: offset, orderBy: { createdAt: 'desc' } }),
       db.patient.count({ where }),
@@ -109,6 +159,17 @@ export async function getOne(req, res, next) {
   try {
     const patient = await db.patient.findUnique({ where: { id: req.params.id } })
     if (!patient) return res.status(404).json({ success: false, error: 'Patient not found' })
+
+    // A doctor may only view their own patients — treat others as not found so we
+    // don't reveal that the record exists.
+    if (doctorPatientFilter(req) && !(await doctorOwnsPatient(req.user.userId, patient.id))) {
+      return res.status(404).json({ success: false, error: 'Patient not found' })
+    }
+    // CRM users may only view patients assigned to them.
+    if (crmScopeId(req) && patient.assignedCrmUserId !== req.user.userId) {
+      return res.status(404).json({ success: false, error: 'Patient not found' })
+    }
+
     res.json({ success: true, data: patient })
   } catch (err) {
     next(err)
@@ -121,7 +182,14 @@ export async function getRecords(req, res, next) {
     const patient = await db.patient.findUnique({ where: { id } })
     if (!patient) return res.status(404).json({ success: false, error: 'Patient not found' })
 
-    const [labOrders, radiologyOrders, admissions] = await Promise.all([
+    if (doctorPatientFilter(req) && !(await doctorOwnsPatient(req.user.userId, id))) {
+      return res.status(404).json({ success: false, error: 'Patient not found' })
+    }
+    if (crmScopeId(req) && patient.assignedCrmUserId !== req.user.userId) {
+      return res.status(404).json({ success: false, error: 'Patient not found' })
+    }
+
+    const [labOrders, radiologyOrders, admissions, appointments, invoices] = await Promise.all([
       db.labOrder.findMany({
         where: { patientId: id },
         include: { results: { include: { test: true } } },
@@ -137,9 +205,40 @@ export async function getRecords(req, res, next) {
         include: { bed: { include: { ward: true } } },
         orderBy: { admissionDate: 'desc' },
       }),
+      db.appointment.findMany({
+        where: { patientId: id },
+        include: {
+          doctor: { select: { id: true, fullName: true, specialization: true } },
+        },
+        orderBy: { appointmentDate: 'desc' },
+      }),
+      db.invoice.findMany({
+        where: { patientId: id },
+        orderBy: { invoiceDate: 'desc' },
+      }),
     ])
 
-    res.json({ success: true, data: { labOrders, radiologyOrders, admissions } })
+    // Attach department names (Appointment stores departmentId but has no relation)
+    const deptIds = [...new Set(appointments.map(a => a.departmentId).filter(Boolean))]
+    if (deptIds.length) {
+      const depts = await db.department.findMany({ where: { id: { in: deptIds } }, select: { id: true, name: true } })
+      const deptMap = new Map(depts.map(d => [d.id, d]))
+      appointments.forEach(a => { a.department = a.departmentId ? deptMap.get(a.departmentId) || null : null })
+    }
+
+    // Billing summary across all non-cancelled invoices
+    const billable = invoices.filter(i => i.status !== 'cancelled' && i.paymentStatus !== 'cancelled')
+    const totalBilled = billable.reduce((s, i) => s + (i.totalAmount || 0), 0)
+    const totalPaid = billable.reduce((s, i) => s + (i.amountPaid || 0), 0)
+    const balanceDue = billable.reduce((s, i) => s + (i.balanceDue != null ? i.balanceDue : (i.totalAmount || 0) - (i.amountPaid || 0)), 0)
+
+    res.json({
+      success: true,
+      data: {
+        labOrders, radiologyOrders, admissions, appointments, invoices,
+        billing: { totalBilled, totalPaid, balanceDue, invoiceCount: billable.length },
+      },
+    })
   } catch (err) {
     next(err)
   }

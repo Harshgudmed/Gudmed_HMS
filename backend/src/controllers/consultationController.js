@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { scopedDoctorId } from '../utils/scope.js'
 
 export async function getAll(req, res, next) {
   try {
@@ -11,6 +12,9 @@ export async function getAll(req, res, next) {
 
     if (patientId) where.patientId = patientId
     if (doctorId) where.doctorId = doctorId
+    // A doctor only sees their own consultations.
+    const myDoctorId = scopedDoctorId(req)
+    if (myDoctorId) where.doctorId = myDoctorId
     if (date) {
       const targetDate = new Date(date)
       where.visitDate = {

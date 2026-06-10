@@ -724,7 +724,7 @@ export default function SettingsModule() {
                 </div>
                 <p className="text-xs text-gray-500">
                   When an API key is set in the backend <code>.env</code> file, messages are sent
-                  automatically without any staff action. Supported providers:
+                  automatically without any staff action. Supported providers:       
                 </p>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   {[

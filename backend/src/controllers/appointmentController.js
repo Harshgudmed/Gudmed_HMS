@@ -1,5 +1,6 @@
 import { db } from '../config/db.js'
 import { startOfDay, endOfDay } from '../utils/dates.js'
+import { scopedDoctorId } from '../utils/scope.js'
 
 export async function getAll(req, res, next) {
   try {
@@ -17,6 +18,10 @@ export async function getAll(req, res, next) {
     if (status) where.status = status
     if (doctorId) where.doctorId = doctorId
     if (patientId) where.patientId = patientId
+
+    // A doctor only sees their own appointments (overrides any doctorId query param).
+    const myDoctorId = scopedDoctorId(req)
+    if (myDoctorId) where.doctorId = myDoctorId
 
     const [appointments, total] = await Promise.all([
       db.appointment.findMany({
@@ -51,8 +56,13 @@ export async function getOne(req, res, next) {
     const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { id } = req.params
 
+    // Scope single-appointment reads to the doctor's own (others → 404 below).
+    const where = { id, organizationId }
+    const myDoctorId = scopedDoctorId(req)
+    if (myDoctorId) where.doctorId = myDoctorId
+
     const appointment = await db.appointment.findFirst({
-      where: { id, organizationId },
+      where,
       include: {
         patient: true,
         doctor: { select: { id: true, fullName: true, specialization: true } },
@@ -94,12 +104,15 @@ export async function create(req, res, next) {
         return res.status(404).json({ success: false, error: 'Doctor not found' })
       }
 
-      // Find patient's last appointment with this doctor
-      const lastAppointment = await db.appointment.findFirst({
+      // Anchor: the patient's most recent NEW-PATIENT visit with this doctor.
+      // Follow-up pricing is measured from this visit (not from the last visit of
+      // any kind), so all follow-ups are priced relative to the original new visit.
+      const lastNewVisit = await db.appointment.findFirst({
         where: {
           organizationId,
           patientId: validatedData.patientId,
           doctorId: validatedData.doctorId,
+          appointmentType: 'new_patient',
           status: { notIn: ['cancelled', 'rescheduled'] },
           appointmentDate: { lt: apptDate },
         },
@@ -108,15 +121,15 @@ export async function create(req, res, next) {
       })
 
       let daysSinceLastVisit = null
-      if (lastAppointment) {
-        daysSinceLastVisit = Math.floor((apptDate - new Date(lastAppointment.appointmentDate)) / (1000 * 60 * 60 * 24))
+      if (lastNewVisit) {
+        daysSinceLastVisit = Math.floor((apptDate - new Date(lastNewVisit.appointmentDate)) / (1000 * 60 * 60 * 24))
       }
 
       // Apply fee based on slab or base fee
-      if (!lastAppointment || daysSinceLastVisit > 30) {
-        // New patient or beyond 30-day window
+      if (!lastNewVisit || daysSinceLastVisit > 30) {
+        // First-ever new patient, or beyond the 30-day window (reset to New Patient)
         consultationFee = doctor.consultationFee || 500
-        appliedSlabInfo = { type: lastAppointment ? '30day_reset' : 'new_patient' }
+        appliedSlabInfo = { type: lastNewVisit ? '30day_reset' : 'new_patient' }
       } else {
         // Check for matching slab
         const slab = await db.doctorFeeSlab.findFirst({
@@ -259,12 +272,27 @@ export async function update(req, res, next) {
       return res.status(404).json({ success: false, error: 'Appointment not found' })
     }
 
-    const updates = { ...body }
-    if (body.status === 'checked_in') updates.checkedInAt = new Date()
-    else if (body.status === 'in_progress') updates.startedAt = new Date()
-    else if (body.status === 'completed') updates.completedAt = new Date()
-    else if (body.status === 'cancelled') updates.cancelledAt = new Date()
-    else if (body.status === 'no_show') updates.cancelledAt = new Date()
+    // Whitelist: only these fields can be changed — sensitive fields like
+    // organizationId, patientId, invoiceId are never touched.
+    const updates = {}
+    if (body.appointmentDate !== undefined) updates.appointmentDate = body.appointmentDate
+    if (body.appointmentTime !== undefined) updates.appointmentTime = body.appointmentTime
+    if (body.appointmentType !== undefined) updates.appointmentType = body.appointmentType
+    if (body.doctorId        !== undefined) updates.doctorId        = body.doctorId
+    if (body.notes           !== undefined) updates.notes           = body.notes
+    if (body.reason          !== undefined) updates.reason          = body.reason
+    if (body.consultationFee !== undefined) updates.consultationFee = body.consultationFee
+    if (body.reminderSent    !== undefined) updates.reminderSent    = body.reminderSent
+
+    // Status change → auto-set the matching timestamp
+    if (body.status !== undefined) {
+      updates.status = body.status
+      if      (body.status === 'checked_in')  updates.checkedInAt  = new Date()
+      else if (body.status === 'in_progress') updates.startedAt    = new Date()
+      else if (body.status === 'completed')   updates.completedAt  = new Date()
+      else if (body.status === 'cancelled')   updates.cancelledAt  = new Date()
+      else if (body.status === 'no_show')     updates.cancelledAt  = new Date()
+    }
 
     if (body.reminderSent === true) updates.reminderSentAt = new Date()
 

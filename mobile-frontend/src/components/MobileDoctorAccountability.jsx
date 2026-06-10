@@ -64,7 +64,7 @@ export default function MobileDoctorAccountability({ brandColor = '#2E4168' }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-semibold text-[14px] text-gray-900 truncate">{dName(c.doctor)}</p>
-                    <p className="text-[11px] text-gray-400">{c.period || '—'}{c.commissionRate ? ` · ${c.commissionRate}%` : ''}</p>
+                    <p className="text-[11px] text-gray-400">{c.commissionType === 'percentage' && c.commissionRate ? `${c.commissionRate}%` : ''}{c.invoiceId ? ` · Inv ${c.invoiceId}` : ''}</p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${settled ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{settled ? 'Settled' : 'Pending'}</span>
                 </div>

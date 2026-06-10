@@ -21,7 +21,16 @@ export default function MobileDoctors({ brandColor = '#2E4168' }) {
   useEffect(() => {
     let alive = true
     client.get('/settings', { params: { resource: 'users' } })
-      .then(res => { if (alive) setDoctors((res?.data || []).filter(u => u.role === 'doctor')) })
+      .then(res => {
+        if (!alive) return
+        const docs = (res?.data || []).filter(u => u.role === 'doctor')
+        const seen = new Set()
+        setDoctors(docs.filter(d => {
+          const k = `${(d.fullName || '').trim().toLowerCase()}|${(d.specialization || '').trim().toLowerCase()}`
+          if (seen.has(k)) return false
+          seen.add(k); return true
+        }))
+      })
       .catch(err => { if (alive) setError(err.message || 'Failed to load doctors') })
     return () => { alive = false }
   }, [])

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { clearOrgCache } from '@/lib/orgSettings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -40,6 +41,7 @@ const ROLE_LABELS = {
   radiology_tech: 'Radiology Technician',
   billing_clerk: 'Billing Clerk',
   inventory_manager: 'Inventory Manager',
+  patient_crm: 'Patient CRM',
 }
 
 const INDIAN_STATES = [
@@ -58,6 +60,8 @@ const userSchema = z.object({
   departmentId: z.string().optional(),
   phone: z.string().optional(),
   specialization: z.string().optional(),
+  // Required when creating (validated in onSubmitUser); on edit, blank means "keep".
+  password: z.string().optional().or(z.literal('')),
 })
 
 // All toggleable system modules (Dashboard & Settings are always available).
@@ -74,6 +78,7 @@ const ALL_MODULES = [
   { key: 'inpatient',            label: 'Inpatient',            description: 'Ward and bed management' },
   { key: 'reports',              label: 'Reports',              description: 'Analytics and reports' },
   { key: 'doctorAccountability', label: 'Doctor Accountability', description: 'Doctor commissions and settlements' },
+  { key: 'patientCrm',           label: 'Patient CRM',          description: 'Assign patients to CRM users and route to departments' },
   { key: 'deathCertificates',    label: 'Death Certificates',   description: 'Death certificate issuance' },
   { key: 'inventory',            label: 'Inventory',            description: 'Stock management across departments' },
   { key: 'accounting',           label: 'Accounting',           description: 'Financial accounting and reporting' },
@@ -104,7 +109,7 @@ export default function SettingsModule() {
 
   const userForm = useForm({
     resolver: zodResolver(userSchema),
-    defaultValues: { fullName: '', email: '', role: '', departmentId: '', phone: '', specialization: '' },
+    defaultValues: { fullName: '', email: '', role: '', departmentId: '', phone: '', specialization: '', password: '' },
   })
 
   async function fetchAll() {
@@ -161,9 +166,10 @@ export default function SettingsModule() {
         departmentId: editingUser.departmentId || '',
         phone: editingUser.phone || '',
         specialization: editingUser.specialization || '',
+        password: '',
       })
     } else {
-      userForm.reset({ fullName: '', email: '', role: '', departmentId: '', phone: '', specialization: '' })
+      userForm.reset({ fullName: '', email: '', role: '', departmentId: '', phone: '', specialization: '', password: '' })
     }
   }, [editingUser])
 
@@ -218,12 +224,19 @@ export default function SettingsModule() {
 
   async function onSubmitUser(data) {
     try {
+      // Drop an empty password so an edit without a reset keeps the existing one.
+      const password = (data.password || '').trim()
+      const payload = { ...data, password: password || undefined, departmentId: data.departmentId || null }
       if (editingUser) {
-        const res = await client.patch('/settings', { resource: 'user', id: editingUser.id, ...data, departmentId: data.departmentId || null })
+        const res = await client.patch('/settings', { resource: 'user', id: editingUser.id, ...payload })
         if (!res.success) throw new Error(res.error || 'Failed to update user')
         toast.success('User updated successfully')
       } else {
-        const res = await client.post('/settings', { resource: 'user', organizationId: ORG_ID, ...data, departmentId: data.departmentId || null, isActive: true })
+        if (password.length < 6) {
+          userForm.setError('password', { message: 'Set a password (min 6 characters) so the user can log in' })
+          return
+        }
+        const res = await client.post('/settings', { resource: 'user', organizationId: ORG_ID, ...payload, isActive: true })
         if (!res.success) throw new Error(res.error || 'Failed to create user')
         toast.success('User added successfully')
       }
@@ -488,6 +501,19 @@ export default function SettingsModule() {
                       )} />
                       <FormField control={userForm.control} name="email" render={({ field }) => (
                         <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="user@hospital.in" {...field} /></FormControl><FormMessage /></FormItem>
+                      )} />
+                      <FormField control={userForm.control} name="password" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{editingUser ? 'New Password' : 'Password'}</FormLabel>
+                          <FormControl>
+                            <PasswordInput
+                              autoComplete="new-password"
+                              placeholder={editingUser ? 'Leave blank to keep current password' : 'Min 6 characters'}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                       )} />
                       <FormField control={userForm.control} name="role" render={({ field }) => (
                         <FormItem>

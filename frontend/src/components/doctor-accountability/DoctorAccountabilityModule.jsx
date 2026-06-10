@@ -60,81 +60,162 @@ function StatCard({ icon: Icon, label, value, color }) {
   )
 }
 
-function SetupTab() {
+// Unified per-doctor setup: base fee + follow-up day-ranges + commission, all in one place.
+function DoctorsTab() {
   const [doctors, setDoctors] = useState([])
+  const [slabCounts, setSlabCounts] = useState({})   // doctorId -> number of follow-up ranges
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [configDialog, setConfigDialog] = useState(false)
-  const [selected, setSelected] = useState(null)
-  const [form, setForm] = useState({ commissionType: 'percentage', commissionRate: '10', consultationFee: '', followUpDays: '', isActive: true, notes: '' })
-  const [saving, setSaving] = useState(false)
   const [setupPage, setSetupPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
+
+  // Configure dialog state
+  const [cfgOpen, setCfgOpen] = useState(false)
+  const [cfgDoctor, setCfgDoctor] = useState(null)
+  const [baseFee, setBaseFee] = useState('')
+  const [comm, setComm] = useState({ commissionType: 'percentage', commissionRate: '10', isActive: true, notes: '' })
+  const [savingCfg, setSavingCfg] = useState(false)
+  // Follow-up ranges (editable rows) inside the dialog
+  const [rows, setRows] = useState([])
+  const [slabsLoading, setSlabsLoading] = useState(false)
+  const [savingKey, setSavingKey] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await client.get('/doctor-accountability?resource=doctors')
-    if (res.success) setDoctors(res.data)
+    const [dRes, sRes] = await Promise.all([
+      client.get('/doctor-accountability?resource=doctors'),
+      client.get('/fee-slabs'),
+    ])
+    if (dRes.success) setDoctors(dRes.data)
+    if (sRes.success) {
+      const counts = {}
+      sRes.data.forEach(s => { counts[s.doctorId] = (counts[s.doctorId] || 0) + 1 })
+      setSlabCounts(counts)
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { setSetupPage(1) }, [search])
 
-  useEffect(() => {
-    setSetupPage(1)
-  }, [search])
-
-  function openConfig(doc) {
-    setSelected(doc)
-    const fee = doc.consultationFee != null ? String(doc.consultationFee) : ''
-    const followUp = doc.followUpDays != null ? String(doc.followUpDays) : ''
-    if (doc.commissionConfig) {
-      setForm({
-        commissionType: doc.commissionConfig.commissionType,
-        commissionRate: String(doc.commissionConfig.commissionRate),
-        consultationFee: fee,
-        followUpDays: followUp,
-        isActive: doc.commissionConfig.isActive,
-        notes: doc.commissionConfig.notes || '',
-      })
-    } else {
-      setForm({ commissionType: 'percentage', commissionRate: '10', consultationFee: fee, followUpDays: followUp, isActive: true, notes: '' })
+  async function openConfigure(doc) {
+    setCfgDoctor(doc)
+    setBaseFee(doc.consultationFee != null ? String(doc.consultationFee) : '')
+    setComm(doc.commissionConfig ? {
+      commissionType: doc.commissionConfig.commissionType,
+      commissionRate: String(doc.commissionConfig.commissionRate),
+      isActive: doc.commissionConfig.isActive,
+      notes: doc.commissionConfig.notes || '',
+    } : { commissionType: 'percentage', commissionRate: '10', isActive: true, notes: '' })
+    setRows([])
+    setCfgOpen(true)
+    setSlabsLoading(true)
+    const res = await client.get(`/fee-slabs?doctorId=${doc.id}`)
+    if (res.success) {
+      setRows(res.data.sort((a, b) => a.fromDays - b.fromDays).map(s => ({
+        key: s.id, id: s.id, fromDays: String(s.fromDays), toDays: String(s.toDays),
+        feeAmount: String(s.feeAmount), isActive: s.isActive, notes: s.notes || '',
+      })))
     }
-    setConfigDialog(true)
+    setSlabsLoading(false)
   }
 
-  async function saveConfig() {
-    if (!selected) return
-    setSaving(true)
+  // Save base fee + commission together (one API call)
+  async function saveDoctorSetup() {
+    if (!cfgDoctor) return
+    const fee = baseFee === '' ? null : parseFloat(baseFee)
+    if (baseFee !== '' && (isNaN(fee) || fee < 0)) { toast.error('Enter a valid base fee'); return }
+    const rate = parseFloat(comm.commissionRate)
+    if (isNaN(rate) || rate < 0) { toast.error('Enter a valid commission rate'); return }
+    setSavingCfg(true)
     const res = await client.post('/doctor-accountability?resource=config', {
-      doctorId: selected.id,
-      ...form,
-      commissionRate: parseFloat(form.commissionRate) || 0,
-      consultationFee: form.consultationFee === '' ? null : parseFloat(form.consultationFee) || 0,
-      followUpDays: form.followUpDays === '' ? null : parseInt(form.followUpDays) || 0,
+      doctorId: cfgDoctor.id,
+      consultationFee: fee,
+      commissionType: comm.commissionType,
+      commissionRate: rate,
+      isActive: comm.isActive,
+      notes: comm.notes || null,
     })
-    if (res.success) { toast.success('Commission config saved'); setConfigDialog(false); load() }
+    if (res.success) { toast.success('Doctor setup saved'); load() }
     else toast.error(res.error || 'Failed to save')
-    setSaving(false)
+    setSavingCfg(false)
+  }
+
+  // ── Follow-up range row handlers ──────────────────────────────────────────
+  function updateRow(key, patch) { setRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r))) }
+  function addRange() {
+    setRows(prev => {
+      const last = prev[prev.length - 1]
+      const from = last && last.toDays !== '' ? last.toDays : ''
+      return [...prev, { key: `new-${Date.now()}`, id: null, fromDays: from, toDays: '', feeAmount: '', isActive: true, notes: '' }]
+    })
+  }
+  function validateRow(row) {
+    const from = parseInt(row.fromDays), to = parseInt(row.toDays), fee = parseFloat(row.feeAmount)
+    if (isNaN(from) || isNaN(to) || isNaN(fee)) return 'From Day, To Day and Charge are required'
+    if (from < 0 || to < 0) return 'Days cannot be negative'
+    if (from >= to) return 'From Day must be less than To Day'
+    if (fee < 0) return 'Charge cannot be negative'
+    const overlap = rows.find(r => r.key !== row.key && r.fromDays !== '' && r.toDays !== '' &&
+      (from < parseInt(r.toDays)) && (to > parseInt(r.fromDays)))
+    if (overlap) return `Overlaps with range ${overlap.fromDays}-${overlap.toDays} days`
+    return null
+  }
+  async function reloadSlabs(doctorId) {
+    const res = await client.get(`/fee-slabs?doctorId=${doctorId}`)
+    if (res.success) {
+      setRows(res.data.sort((a, b) => a.fromDays - b.fromDays).map(s => ({
+        key: s.id, id: s.id, fromDays: String(s.fromDays), toDays: String(s.toDays),
+        feeAmount: String(s.feeAmount), isActive: s.isActive, notes: s.notes || '',
+      })))
+      setSlabCounts(prev => ({ ...prev, [doctorId]: res.data.length }))
+    }
+  }
+  async function saveRow(row) {
+    const err = validateRow(row)
+    if (err) { toast.error(err); return }
+    setSavingKey(row.key)
+    const payload = { fromDays: parseInt(row.fromDays), toDays: parseInt(row.toDays), feeAmount: parseFloat(row.feeAmount), isActive: row.isActive, notes: row.notes || null }
+    try {
+      const res = row.id
+        ? await client.patch(`/fee-slabs/${row.id}`, payload)
+        : await client.post('/fee-slabs', { doctorId: cfgDoctor.id, ...payload })
+      if (res.success) { toast.success(row.id ? 'Range updated' : 'Range added'); await reloadSlabs(cfgDoctor.id) }
+      else toast.error(res.error || 'Failed to save range')
+    } catch { toast.error('Error saving range') }
+    setSavingKey(null)
+  }
+  async function deleteRow(row) {
+    if (!row.id) { setRows(prev => prev.filter(r => r.key !== row.key)); return }
+    if (!confirm('Delete this day-range?')) return
+    try {
+      const res = await client.delete(`/fee-slabs/${row.id}`)
+      if (res.success) { toast.success('Range deleted'); await reloadSlabs(cfgDoctor.id) }
+      else toast.error(res.error || 'Failed to delete')
+    } catch { toast.error('Error deleting range') }
   }
 
   const filtered = doctors.filter(d =>
     d.fullName.toLowerCase().includes(search.toLowerCase()) ||
     (d.specialization || '').toLowerCase().includes(search.toLowerCase())
   )
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+  const paginated = filtered.slice((setupPage - 1) * ITEMS_PER_PAGE, setupPage * ITEMS_PER_PAGE)
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search doctors..." className="pl-9" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search doctor by name..." className="pl-9" />
         </div>
         <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4 mr-1" />Refresh</Button>
       </div>
+
       {loading ? (
         <div className="text-center py-12 text-gray-400">Loading doctors...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">No doctors found. Add doctors in Settings → Users first.</div>
+        <div className="text-center py-12 text-gray-400">No doctors found. Click "Add Doctor" above to create one.</div>
       ) : (
         <div className="border rounded-lg">
           <Table>
@@ -142,137 +223,173 @@ function SetupTab() {
               <TableRow>
                 <TableHead>Doctor</TableHead>
                 <TableHead>Specialization</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Appointment Fee</TableHead>
-                <TableHead>Free Follow-up</TableHead>
-                <TableHead>Commission Rate</TableHead>
+                <TableHead>Base Fee</TableHead>
+                <TableHead>Follow-up</TableHead>
+                <TableHead>Commission</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-right">Setup</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(() => {
-                const ITEMS_PER_PAGE = 10
-                const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
-                const startIdx = (setupPage - 1) * ITEMS_PER_PAGE
-                const endIdx = startIdx + ITEMS_PER_PAGE
-                const paginatedData = filtered.slice(startIdx, endIdx)
-                return paginatedData.map(doc => (
+              {paginated.map(doc => {
+                const cfg = doc.commissionConfig
+                const ranges = slabCounts[doc.id] || 0
+                const ready = cfg && doc.consultationFee != null
+                return (
                   <TableRow key={doc.id}>
                     <TableCell className="font-medium">{doc.fullName}</TableCell>
                     <TableCell className="text-gray-500">{doc.specialization || '—'}</TableCell>
-                    <TableCell className="text-gray-500">{doc.department?.name || '—'}</TableCell>
                     <TableCell>
                       {doc.consultationFee != null
                         ? <span className="font-medium text-gray-800">{fmt(doc.consultationFee)}</span>
                         : <span className="text-gray-400 italic">Not set</span>}
                     </TableCell>
                     <TableCell>
-                      {doc.followUpDays
-                        ? <span className="text-gray-700">{doc.followUpDays} days</span>
-                        : <span className="text-gray-400 italic">—</span>}
+                      {ranges > 0
+                        ? <span className="text-gray-700">{ranges} range{ranges > 1 ? 's' : ''}</span>
+                        : <span className="text-gray-400 italic">None</span>}
                     </TableCell>
                     <TableCell>
-                      {doc.commissionConfig
-                        ? doc.commissionConfig.commissionType === 'percentage'
-                          ? `${doc.commissionConfig.commissionRate}%`
-                          : fmt(doc.commissionConfig.commissionRate)
+                      {cfg
+                        ? (cfg.commissionType === 'percentage' ? `${cfg.commissionRate}%` : fmt(cfg.commissionRate))
                         : <span className="text-gray-400 italic">Not set</span>}
                     </TableCell>
                     <TableCell>
-                      {doc.commissionConfig ? (
-                        <Badge variant={doc.commissionConfig.isActive ? 'default' : 'secondary'}>
-                          {doc.commissionConfig.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
-                      ) : <Badge variant="outline" className="text-gray-400">No Config</Badge>}
+                      {ready
+                        ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0">Active</Badge>
+                        : <Badge variant="outline" className="text-amber-600 border-amber-300">Setup needed</Badge>}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => openConfig(doc)}>
-                        <Edit2 className="h-3.5 w-3.5 mr-1" />{doc.commissionConfig ? 'Edit' : 'Set Up'}
+                      <Button size="sm" variant="outline" onClick={() => openConfigure(doc)}>
+                        <Edit2 className="h-3.5 w-3.5 mr-1" />Configure
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))
-              })()}
+                )
+              })}
             </TableBody>
           </Table>
-          {filtered.length > 10 && (() => {
-            const ITEMS_PER_PAGE = 10
-            const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
-            return (
-              <div className="flex items-center justify-end gap-2 p-4 border-t bg-gray-50">
-                <Button variant="outline" size="sm" onClick={() => setSetupPage(p => Math.max(1, p - 1))} disabled={setupPage === 1}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
-                </Button>
-                <span className="text-sm text-gray-600">Page {setupPage} of {totalPages}</span>
-                <Button variant="outline" size="sm" onClick={() => setSetupPage(p => Math.min(totalPages, p + 1))} disabled={setupPage === totalPages}>
-                  Next<ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            )
-          })()}
+          {filtered.length > ITEMS_PER_PAGE && (
+            <div className="flex items-center justify-end gap-2 p-4 border-t bg-gray-50">
+              <Button variant="outline" size="sm" onClick={() => setSetupPage(p => Math.max(1, p - 1))} disabled={setupPage === 1}>
+                <ChevronLeft className="h-4 w-4 mr-1" />Previous
+              </Button>
+              <span className="text-sm text-gray-600">Page {setupPage} of {totalPages}</span>
+              <Button variant="outline" size="sm" onClick={() => setSetupPage(p => Math.min(totalPages, p + 1))} disabled={setupPage === totalPages}>
+                Next<ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
-      <Dialog open={configDialog} onOpenChange={setConfigDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Commission Config — {selected?.fullName}</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Appointment Fee (₹)</Label>
-                <Input
-                  type="number" min={0} step={50} className="mt-1"
-                  value={form.consultationFee}
-                  onChange={e => setForm(f => ({ ...f, consultationFee: e.target.value }))}
-                  placeholder="e.g. 500"
-                />
-                <p className="text-xs text-gray-400 mt-1">Default fee when booking this doctor.</p>
+
+      {/* Configure dialog: base fee + follow-up ranges + commission in one place */}
+      <Dialog open={cfgOpen} onOpenChange={setCfgOpen}>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Configure — {cfgDoctor?.fullName}</DialogTitle></DialogHeader>
+          <div className="space-y-6 pt-2">
+            {/* ① New Patient base fee */}
+            <section>
+              <h4 className="font-semibold text-sm text-gray-800 mb-2">① New Patient Fee</h4>
+              <div className="flex items-end gap-3">
+                <div className="w-44">
+                  <Label className="text-xs">Base charge (₹)</Label>
+                  <Input type="number" min={0} step={50} className="mt-1" value={baseFee}
+                    onChange={e => setBaseFee(e.target.value)} placeholder="e.g. 1000" />
+                </div>
+                <p className="text-xs text-gray-400 pb-2">Charged on the first visit and after the 30-day reset.</p>
               </div>
-              <div>
-                <Label>Free Follow-up (days)</Label>
-                <Input
-                  type="number" min={0} step={1} className="mt-1"
-                  value={form.followUpDays}
-                  onChange={e => setForm(f => ({ ...f, followUpDays: e.target.value }))}
-                  placeholder="e.g. 7"
-                />
-                <p className="text-xs text-gray-400 mt-1">Repeat visit within N days = no charge. Blank = always charge.</p>
+            </section>
+
+            {/* ② Follow-up day-ranges */}
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-semibold text-sm text-gray-800">② Follow-up Charges (by days)</h4>
+                <Button size="sm" variant="secondary" onClick={addRange}><Plus className="h-4 w-4 mr-1" />Add Range</Button>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Commission Type</Label>
-                <Select value={form.commissionType} onValueChange={v => setForm(f => ({ ...f, commissionType: v }))}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="percentage">Percentage (%)</SelectItem>
-                    <SelectItem value="fixed">Fixed Amount (₹)</SelectItem>
-                  </SelectContent>
-                </Select>
+              {slabsLoading ? (
+                <div className="text-center py-6 text-gray-400 text-sm">Loading ranges...</div>
+              ) : (
+                <div className="border rounded-lg overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-20">From</TableHead>
+                        <TableHead className="w-20">To</TableHead>
+                        <TableHead className="w-24">Charge ₹</TableHead>
+                        <TableHead className="w-16">Active</TableHead>
+                        <TableHead>Notes</TableHead>
+                        <TableHead className="text-right w-28">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.length === 0 ? (
+                        <TableRow><TableCell colSpan={6} className="text-center text-gray-400 py-5">No ranges yet. Click "Add Range".</TableCell></TableRow>
+                      ) : rows.map(row => (
+                        <TableRow key={row.key} className={row.id ? '' : 'bg-amber-50'}>
+                          <TableCell><Input type="number" min={0} className="h-8" value={row.fromDays} onChange={e => updateRow(row.key, { fromDays: e.target.value })} placeholder="0" /></TableCell>
+                          <TableCell><Input type="number" min={0} className="h-8" value={row.toDays} onChange={e => updateRow(row.key, { toDays: e.target.value })} placeholder="3" /></TableCell>
+                          <TableCell><Input type="number" min={0} step={50} className="h-8" value={row.feeAmount} onChange={e => updateRow(row.key, { feeAmount: e.target.value })} placeholder="0=free" /></TableCell>
+                          <TableCell><input type="checkbox" className="h-4 w-4 rounded border-gray-300" checked={row.isActive} onChange={e => updateRow(row.key, { isActive: e.target.checked })} /></TableCell>
+                          <TableCell><Input className="h-8" value={row.notes} onChange={e => updateRow(row.key, { notes: e.target.value })} placeholder="optional" /></TableCell>
+                          <TableCell className="text-right space-x-1 whitespace-nowrap">
+                            <Button size="sm" className="h-7" onClick={() => saveRow(row)} disabled={savingKey === row.key}>{savingKey === row.key ? '...' : (row.id ? 'Save' : 'Add')}</Button>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-red-600" onClick={() => deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow>
+                        <TableCell className="text-gray-400 text-sm font-medium">30+</TableCell>
+                        <TableCell className="text-gray-400 text-sm">—</TableCell>
+                        <TableCell className="text-gray-500 text-sm">{baseFee ? `₹${baseFee}` : 'base'}</TableCell>
+                        <TableCell colSpan={3} className="text-gray-400 text-sm italic">After 30 days → New Patient (base fee)</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </section>
+
+            {/* ③ Commission */}
+            <section>
+              <h4 className="font-semibold text-sm text-gray-800 mb-2">③ Commission</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs">Type</Label>
+                  <Select value={comm.commissionType} onValueChange={v => setComm(c => ({ ...c, commissionType: v }))}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      <SelectItem value="fixed">Fixed Amount (₹)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Rate {comm.commissionType === 'percentage' ? '(%)' : '(₹)'}</Label>
+                  <Input type="number" min={0} step={comm.commissionType === 'percentage' ? 0.5 : 10} className="mt-1" value={comm.commissionRate} onChange={e => setComm(c => ({ ...c, commissionRate: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Status</Label>
+                  <Select value={comm.isActive ? 'active' : 'inactive'} onValueChange={v => setComm(c => ({ ...c, isActive: v === 'active' }))}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Notes</Label>
+                  <Input className="mt-1" value={comm.notes} onChange={e => setComm(c => ({ ...c, notes: e.target.value }))} placeholder="optional" />
+                </div>
               </div>
-              <div>
-                <Label>Rate {form.commissionType === 'percentage' ? '(%)' : '(₹)'}</Label>
-                <Input type="number" className="mt-1" value={form.commissionRate} onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))} min={0} step={form.commissionType === 'percentage' ? 0.5 : 10} />
-              </div>
+            </section>
+
+            <div className="flex gap-2 pt-1 justify-end border-t pt-4">
+              <Button variant="outline" onClick={() => setCfgOpen(false)}>Close</Button>
+              <Button onClick={saveDoctorSetup} disabled={savingCfg}>{savingCfg ? 'Saving...' : 'Save Doctor Setup'}</Button>
             </div>
-            <div>
-              <Label>Status</Label>
-              <Select value={form.isActive ? 'active' : 'inactive'} onValueChange={v => setForm(f => ({ ...f, isActive: v === 'active' }))}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Input className="mt-1" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any notes about this commission arrangement" />
-            </div>
-            <div className="flex gap-2 pt-2 justify-end">
-              <Button variant="outline" onClick={() => setConfigDialog(false)}>Cancel</Button>
-              <Button onClick={saveConfig} disabled={saving}>{saving ? 'Saving...' : 'Save Config'}</Button>
-            </div>
+            <p className="text-xs text-gray-400 -mt-2">Tip: "Save Doctor Setup" saves the base fee &amp; commission. Follow-up ranges save individually with their own Save button.</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -286,18 +403,20 @@ function CommissionsTab({ openAddSignal }) {
   const [loading, setLoading] = useState(true)
   const [filterDoctor, setFilterDoctor] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
-  const [filterPeriod, setFilterPeriod] = useState('')
   const [filterDate, setFilterDate] = useState('all')
+  // Bulk settle (merged from the old Settlement tab)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkSettling, setBulkSettling] = useState(false)
 
   // Add dialog
   const [addDialog, setAddDialog] = useState(false)
-  const [form, setForm] = useState({ doctorId: '', invoiceId: '', invoiceAmount: '', period: '' })
+  const [form, setForm] = useState({ doctorId: '', invoiceId: '', invoiceAmount: '' })
   const [saving, setSaving] = useState(false)
 
   // Edit dialog
   const [editDialog, setEditDialog] = useState(false)
   const [editEntry, setEditEntry] = useState(null)
-  const [editForm, setEditForm] = useState({ invoiceAmount: '', period: '', invoiceId: '' })
+  const [editForm, setEditForm] = useState({ invoiceAmount: '', invoiceId: '' })
   const [editSaving, setEditSaving] = useState(false)
 
   // Quick-settle dialog
@@ -318,7 +437,6 @@ function CommissionsTab({ openAddSignal }) {
     const params = new URLSearchParams({ resource: 'commissions', limit: String(ITEMS_PER_PAGE), offset: String(offset) })
     if (filterDoctor !== 'all') params.set('doctorId', filterDoctor)
     if (filterStatus !== 'all') params.set('status', filterStatus)
-    if (filterPeriod) params.set('period', filterPeriod)
     try {
       const [cRes, dRes] = await Promise.all([
         client.get(`/doctor-accountability?${params}`),
@@ -334,7 +452,7 @@ function CommissionsTab({ openAddSignal }) {
     } finally {
       setLoading(false)
     }
-  }, [filterDoctor, filterStatus, filterPeriod, commissionsPage])
+  }, [filterDoctor, filterStatus, commissionsPage])
 
   useEffect(() => { load() }, [load])
 
@@ -345,7 +463,7 @@ function CommissionsTab({ openAddSignal }) {
 
   useEffect(() => {
     setCommissionsPage(1)
-  }, [filterDoctor, filterStatus, filterPeriod, filterDate])
+  }, [filterDoctor, filterStatus, filterDate])
 
   // ── Client-side date filter ────────────────────────────────────────────────
   const now = new Date()
@@ -379,12 +497,12 @@ function CommissionsTab({ openAddSignal }) {
     const res = await client.post('/doctor-accountability?resource=commission', {
       doctorId: form.doctorId, invoiceId: form.invoiceId || null,
       invoiceAmount: invoiceAmt, commissionRate: config.commissionRate,
-      commissionType: config.commissionType, commissionAmount: commAmt, period: form.period,
+      commissionType: config.commissionType, commissionAmount: commAmt,
     })
     if (res.success) {
       toast.success('Commission entry added')
       setAddDialog(false)
-      setForm({ doctorId: '', invoiceId: '', invoiceAmount: '', period: '' })
+      setForm({ doctorId: '', invoiceId: '', invoiceAmount: '' })
       load()
     } else toast.error(res.error || 'Failed to add')
     setSaving(false)
@@ -395,7 +513,6 @@ function CommissionsTab({ openAddSignal }) {
     setEditEntry(c)
     setEditForm({
       invoiceAmount: String(c.invoiceAmount),
-      period: c.period || '',
       invoiceId: c.invoiceId || '',
     })
     setEditDialog(true)
@@ -412,7 +529,6 @@ function CommissionsTab({ openAddSignal }) {
     const res = await client.patch(`/doctor-accountability?resource=commission&id=${editEntry.id}`, {
       invoiceAmount: invoiceAmt,
       commissionAmount: commAmt,
-      period: editForm.period,
       invoiceId: editForm.invoiceId || null,
     })
     if (res.success) { toast.success('Commission updated'); setEditDialog(false); load() }
@@ -444,6 +560,27 @@ function CommissionsTab({ openAddSignal }) {
     setSettling(false)
   }
 
+  // ── Bulk settle selected pending commissions ───────────────────────────────
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  async function bulkSettle() {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    setBulkSettling(true)
+    const res = await client.patch('/doctor-accountability?resource=settle', { commissionIds: ids })
+    if (res.success) {
+      toast.success(`${ids.length} commission(s) settled`)
+      setSelectedIds(new Set())
+      load()
+    } else toast.error(res.error || 'Failed to settle')
+    setBulkSettling(false)
+  }
+
   // ── Delete commission ──────────────────────────────────────────────────────
   async function deleteCommission(id) {
     if (!confirm('Delete this commission entry?')) return
@@ -467,7 +604,6 @@ function CommissionsTab({ openAddSignal }) {
 <div class="hosp">${orgInfo.name}</div>
 <div class="title">Commission Settlement Receipt</div>
 <div class="row"><span class="lbl">Doctor</span><span class="val">${c.doctor.fullName}</span></div>
-<div class="row"><span class="lbl">Period</span><span class="val">${periodLabel(c.period)}</span></div>
 <div class="row"><span class="lbl">Invoice ID</span><span class="val">${c.invoiceId || '—'}</span></div>
 <div class="row"><span class="lbl">Invoice Amount</span><span class="val">${fmt(c.invoiceAmount)}</span></div>
 <div class="row"><span class="lbl">Commission Rate</span><span class="val">${c.commissionType === 'percentage' ? `${c.commissionRate}%` : fmt(c.commissionRate)}</span></div>
@@ -482,7 +618,7 @@ function CommissionsTab({ openAddSignal }) {
   // ── CSV export ─────────────────────────────────────────────────────────────
   function exportCSV() {
     const rows = [
-      ['Date', 'Doctor', 'Invoice ID', 'Invoice Amount (₹)', 'Rate', 'Commission (₹)', 'Period', 'Status', 'Settlement Ref'],
+      ['Date', 'Doctor', 'Invoice ID', 'Invoice Amount (₹)', 'Rate', 'Commission (₹)', 'Status', 'Settlement Ref'],
       ...displayed.map(c => [
         format(new Date(c.createdAt), 'dd/MM/yyyy'),
         c.doctor.fullName,
@@ -490,7 +626,6 @@ function CommissionsTab({ openAddSignal }) {
         c.invoiceAmount,
         c.commissionType === 'percentage' ? `${c.commissionRate}%` : `₹${c.commissionRate}`,
         c.commissionAmount,
-        periodLabel(c.period),
         c.status,
         c.settlementRef || '',
       ])
@@ -526,7 +661,6 @@ function CommissionsTab({ openAddSignal }) {
             <SelectItem value="settled">Settled</SelectItem>
           </SelectContent>
         </Select>
-        <Input type="number" min={0} placeholder="Follow-up valid (days)" value={filterPeriod} onChange={e => setFilterPeriod(e.target.value)} className="w-40" />
         {/* Date range filter */}
         <Select value={filterDate} onValueChange={setFilterDate}>
           <SelectTrigger className="w-36"><SelectValue placeholder="Created Date" /></SelectTrigger>
@@ -547,6 +681,21 @@ function CommissionsTab({ openAddSignal }) {
         </div>
       </div>
 
+      {/* Bulk settle bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <span className="text-sm text-blue-800 font-medium">
+            {selectedIds.size} selected — total {fmt(commissions.filter(c => selectedIds.has(c.id)).reduce((s, c) => s + (c.commissionAmount || 0), 0))}
+          </span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+            <Button size="sm" onClick={bulkSettle} disabled={bulkSettling}>
+              <CheckCheck className="h-4 w-4 mr-1" />{bulkSettling ? 'Settling...' : 'Settle Selected'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
@@ -557,21 +706,27 @@ function CommissionsTab({ openAddSignal }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Date</TableHead><TableHead>Doctor</TableHead><TableHead>Invoice ID</TableHead>
                 <TableHead>Invoice Amt</TableHead><TableHead>Rate</TableHead><TableHead>Commission</TableHead>
-                <TableHead>Follow-up Valid</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+                <TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {commissions.map(c => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} className={selectedIds.has(c.id) ? 'bg-blue-50/50' : ''}>
+                    <TableCell>
+                      {c.status === 'pending' ? (
+                        <input type="checkbox" className="h-4 w-4 rounded border-gray-300"
+                          checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} />
+                      ) : null}
+                    </TableCell>
                     <TableCell className="text-sm">{format(new Date(c.createdAt), 'dd MMM yyyy')}</TableCell>
                     <TableCell className="font-medium">{c.doctor.fullName}</TableCell>
                     <TableCell className="text-gray-500 text-sm">{c.invoiceId || '—'}</TableCell>
                     <TableCell>{fmt(c.invoiceAmount)}</TableCell>
                     <TableCell className="text-gray-500 text-sm">{c.commissionType === 'percentage' ? `${c.commissionRate}%` : fmt(c.commissionRate)}</TableCell>
                     <TableCell className="font-semibold text-green-700">{fmt(c.commissionAmount)}</TableCell>
-                    <TableCell className="text-sm text-gray-500">{periodLabel(c.period)}</TableCell>
                     <TableCell>
                       <Badge variant={c.status === 'settled' ? 'default' : 'secondary'} className={c.status === 'settled' ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
                         {c.status === 'settled' ? 'Settled' : 'Pending'}
@@ -630,27 +785,26 @@ function CommissionsTab({ openAddSignal }) {
           <div className="space-y-4 pt-2">
             <div>
               <Label>Doctor *</Label>
-              <Select value={form.doctorId} onValueChange={v => setForm(f => ({ ...f, doctorId: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select doctor" /></SelectTrigger>
-                <SelectContent>
-                  {doctors.map(d => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.fullName}{d.commissionConfig ? ` (${d.commissionConfig.commissionType === 'percentage' ? `${d.commissionConfig.commissionRate}%` : fmt(d.commissionConfig.commissionRate)})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                className="mt-1 w-full"
+                value={form.doctorId}
+                onChange={v => setForm(f => ({ ...f, doctorId: v }))}
+                options={doctors.map(d => ({
+                  value: d.id,
+                  label: d.fullName,
+                  sublabel: d.commissionConfig
+                    ? `Commission ${d.commissionConfig.commissionType === 'percentage' ? `${d.commissionConfig.commissionRate}%` : fmt(d.commissionConfig.commissionRate)}`
+                    : (d.specialization || undefined),
+                }))}
+                placeholder="Select doctor"
+                searchPlaceholder="Search doctor by name..."
+                emptyText="No doctors found"
+              />
               {doctors.length === 0 && <p className="text-xs text-amber-600 mt-1">No doctors found. Add doctors in Settings → Users first.</p>}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Invoice Amount (₹) *</Label>
-                <Input className="mt-1" type="number" value={form.invoiceAmount} onChange={e => setForm(f => ({ ...f, invoiceAmount: e.target.value }))} placeholder="e.g. 5000" />
-              </div>
-              <div>
-                <Label>Follow-up Patient Valid (Days)</Label>
-                <Input className="mt-1" type="number" min={0} step={1} placeholder="e.g. 30" value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))} />
-              </div>
+            <div>
+              <Label>Invoice Amount (₹) *</Label>
+              <Input className="mt-1" type="number" value={form.invoiceAmount} onChange={e => setForm(f => ({ ...f, invoiceAmount: e.target.value }))} placeholder="e.g. 5000" />
             </div>
             {form.doctorId && form.invoiceAmount && (() => {
               const doc = doctors.find(d => d.id === form.doctorId)
@@ -678,15 +832,9 @@ function CommissionsTab({ openAddSignal }) {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Edit Commission — {editEntry?.doctor?.fullName}</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Invoice Amount (₹) *</Label>
-                <Input className="mt-1" type="number" value={editForm.invoiceAmount} onChange={e => setEditForm(f => ({ ...f, invoiceAmount: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Follow-up Patient Valid (Days)</Label>
-                <Input className="mt-1" type="number" min={0} step={1} placeholder="e.g. 30" value={editForm.period} onChange={e => setEditForm(f => ({ ...f, period: e.target.value }))} />
-              </div>
+            <div>
+              <Label>Invoice Amount (₹) *</Label>
+              <Input className="mt-1" type="number" value={editForm.invoiceAmount} onChange={e => setEditForm(f => ({ ...f, invoiceAmount: e.target.value }))} />
             </div>
             {editEntry && editForm.invoiceAmount && (() => {
               const inv = parseFloat(editForm.invoiceAmount) || 0
@@ -717,7 +865,6 @@ function CommissionsTab({ openAddSignal }) {
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm space-y-1">
                 <div className="font-semibold text-green-800">{settleEntry.doctor?.fullName}</div>
                 <div className="text-gray-600">Commission: <span className="font-bold text-green-700">{fmt(settleEntry.commissionAmount)}</span></div>
-                <div className="text-gray-500">Period: {periodLabel(settleEntry.period)}</div>
               </div>
               <div>
                 <Label>Settlement Reference</Label>
@@ -853,13 +1000,11 @@ function FeeStructureTab() {
   const [doctors, setDoctors] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedDoctor, setSelectedDoctor] = useState(null)
-  const [slabs, setSlabs] = useState([])
+  const [rows, setRows] = useState([])             // editable follow-up day-ranges
   const [slabsLoading, setSlabsLoading] = useState(false)
-  const [slabDialog, setSlabDialog] = useState(false)
-  const [editingSlabId, setEditingSlabId] = useState(null)
-  const [slabForm, setSlabForm] = useState({ fromDays: '', toDays: '', feeAmount: '', isActive: true, notes: '' })
-  const [saving, setSaving] = useState(false)
-  const [validationError, setValidationError] = useState('')
+  const [baseFee, setBaseFee] = useState('')       // doctor's new-patient base fee
+  const [savingBase, setSavingBase] = useState(false)
+  const [savingKey, setSavingKey] = useState(null) // key of the row currently saving
 
   const loadDoctors = useCallback(async () => {
     setLoading(true)
@@ -871,8 +1016,15 @@ function FeeStructureTab() {
   const loadSlabs = useCallback(async (doctorId) => {
     setSlabsLoading(true)
     const res = await client.get(`/fee-slabs?doctorId=${doctorId}`)
-    if (res.success) setSlabs(res.data)
-    else toast.error(res.error || 'Failed to load slabs')
+    if (res.success) {
+      setRows(res.data
+        .sort((a, b) => a.fromDays - b.fromDays)
+        .map(s => ({
+          key: s.id, id: s.id,
+          fromDays: String(s.fromDays), toDays: String(s.toDays),
+          feeAmount: String(s.feeAmount), isActive: s.isActive, notes: s.notes || '',
+        })))
+    } else toast.error(res.error || 'Failed to load slabs')
     setSlabsLoading(false)
   }, [])
 
@@ -880,275 +1032,239 @@ function FeeStructureTab() {
 
   function handleSelectDoctor(doctorId) {
     setSelectedDoctor(doctorId)
+    const doc = doctors.find(d => d.id === doctorId)
+    setBaseFee(doc?.consultationFee != null ? String(doc.consultationFee) : '')
     loadSlabs(doctorId)
   }
 
-  function openSlabDialog(slab = null) {
-    setValidationError('')
-    if (slab) {
-      setEditingSlabId(slab.id)
-      setSlabForm({
-        fromDays: String(slab.fromDays),
-        toDays: String(slab.toDays),
-        feeAmount: String(slab.feeAmount),
-        isActive: slab.isActive,
-        notes: slab.notes || ''
+  // ── New-patient base fee ───────────────────────────────────────────────────
+  // Persist the doctor's base fee without disturbing their commission config.
+  async function saveBaseFee() {
+    const fee = parseFloat(baseFee)
+    if (isNaN(fee) || fee < 0) { toast.error('Enter a valid base fee'); return }
+    setSavingBase(true)
+    try {
+      const doc = doctors.find(d => d.id === selectedDoctor)
+      const cfg = doc?.commissionConfig
+      const res = await client.post('/doctor-accountability?resource=config', {
+        doctorId: selectedDoctor,
+        consultationFee: fee,
+        commissionType: cfg?.commissionType || 'percentage',
+        commissionRate: cfg?.commissionRate ?? 0,
+        isActive: cfg?.isActive ?? true,
+        notes: cfg?.notes || null,
       })
-    } else {
-      setEditingSlabId(null)
-      setSlabForm({ fromDays: '', toDays: '', feeAmount: '', isActive: true, notes: '' })
+      if (res.success) { toast.success('New-patient base fee saved'); loadDoctors() }
+      else toast.error(res.error || 'Failed to save base fee')
+    } catch (err) {
+      toast.error('Error saving base fee')
     }
-    setSlabDialog(true)
+    setSavingBase(false)
   }
 
-  function validateSlab() {
-    const from = parseInt(slabForm.fromDays)
-    const to = parseInt(slabForm.toDays)
-    const fee = parseFloat(slabForm.feeAmount)
+  // ── Follow-up day-ranges (multiple, inline editable) ───────────────────────
+  function updateRow(key, patch) {
+    setRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)))
+  }
 
-    if (isNaN(from) || isNaN(to) || isNaN(fee)) {
-      setValidationError('All fields are required')
-      return false
-    }
-    if (from >= to) {
-      setValidationError('"From Days" must be less than "To Days"')
-      return false
-    }
-    if (fee < 0) {
-      setValidationError('Fee amount cannot be negative')
-      return false
-    }
-
-    // Check for overlaps
-    const overlapping = slabs.filter(s => {
-      if (editingSlabId && s.id === editingSlabId) return false
-      return (from < s.toDays) && (to > s.fromDays)
+  // Add a new blank range; prefill its "From Day" with the previous range's "To Day"
+  function addRange() {
+    setRows(prev => {
+      const last = prev[prev.length - 1]
+      const from = last && last.toDays !== '' ? last.toDays : ''
+      return [...prev, { key: `new-${Date.now()}`, id: null, fromDays: from, toDays: '', feeAmount: '', isActive: true, notes: '' }]
     })
-    if (overlapping.length > 0) {
-      setValidationError(`Overlaps with slab: ${overlapping[0].fromDays}-${overlapping[0].toDays} days`)
-      return false
-    }
-
-    return true
   }
 
-  async function saveSlab() {
-    if (!validateSlab()) return
-    setSaving(true)
+  function validateRow(row) {
+    const from = parseInt(row.fromDays)
+    const to = parseInt(row.toDays)
+    const fee = parseFloat(row.feeAmount)
+    if (isNaN(from) || isNaN(to) || isNaN(fee)) return 'From Day, To Day and Charge are required'
+    if (from < 0 || to < 0) return 'Days cannot be negative'
+    if (from >= to) return 'From Day must be less than To Day'
+    if (fee < 0) return 'Charge cannot be negative'
+    const overlap = rows.find(r =>
+      r.key !== row.key && r.fromDays !== '' && r.toDays !== '' &&
+      (from < parseInt(r.toDays)) && (to > parseInt(r.fromDays)))
+    if (overlap) return `Overlaps with range ${overlap.fromDays}-${overlap.toDays} days`
+    return null
+  }
 
+  async function saveRow(row) {
+    const err = validateRow(row)
+    if (err) { toast.error(err); return }
+    setSavingKey(row.key)
     const payload = {
-      fromDays: parseInt(slabForm.fromDays),
-      toDays: parseInt(slabForm.toDays),
-      feeAmount: parseFloat(slabForm.feeAmount),
-      isActive: slabForm.isActive,
-      notes: slabForm.notes || null,
+      fromDays: parseInt(row.fromDays),
+      toDays: parseInt(row.toDays),
+      feeAmount: parseFloat(row.feeAmount),
+      isActive: row.isActive,
+      notes: row.notes || null,
     }
-
     try {
-      let res
-      if (editingSlabId) {
-        res = await client.patch(`/fee-slabs/${editingSlabId}`, payload)
-      } else {
-        res = await client.post('/fee-slabs', { doctorId: selectedDoctor, ...payload })
-      }
-
-      if (res.success) {
-        toast.success(editingSlabId ? 'Slab updated' : 'Slab created')
-        setSlabDialog(false)
-        loadSlabs(selectedDoctor)
-      } else {
-        toast.error(res.error || 'Failed to save slab')
-      }
+      const res = row.id
+        ? await client.patch(`/fee-slabs/${row.id}`, payload)
+        : await client.post('/fee-slabs', { doctorId: selectedDoctor, ...payload })
+      if (res.success) { toast.success(row.id ? 'Range updated' : 'Range added'); await loadSlabs(selectedDoctor) }
+      else toast.error(res.error || 'Failed to save range')
     } catch (err) {
-      toast.error('Error saving slab')
+      toast.error('Error saving range')
     }
-    setSaving(false)
+    setSavingKey(null)
   }
 
-  async function deleteSlab(slabId) {
-    if (!confirm('Delete this fee slab?')) return
+  async function deleteRow(row) {
+    // Unsaved draft row → just drop it locally
+    if (!row.id) { setRows(prev => prev.filter(r => r.key !== row.key)); return }
+    if (!confirm('Delete this day-range?')) return
     try {
-      const res = await client.delete(`/fee-slabs/${slabId}`)
-      if (res.success) {
-        toast.success('Slab deleted')
-        loadSlabs(selectedDoctor)
-      } else {
-        toast.error(res.error || 'Failed to delete slab')
-      }
+      const res = await client.delete(`/fee-slabs/${row.id}`)
+      if (res.success) { toast.success('Range deleted'); await loadSlabs(selectedDoctor) }
+      else toast.error(res.error || 'Failed to delete')
     } catch (err) {
-      toast.error('Error deleting slab')
+      toast.error('Error deleting range')
     }
   }
+
+  const selectedDoc = doctors.find(d => d.id === selectedDoctor)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <div className="flex-1">
-          <Label className="text-sm text-gray-600">Select Doctor</Label>
-          <Select value={selectedDoctor || ''} onValueChange={handleSelectDoctor}>
-            <SelectTrigger className="mt-1">
-              <SelectValue placeholder="Choose doctor to configure slabs..." />
-            </SelectTrigger>
-            <SelectContent>
-              {doctors.map(doc => (
-                <SelectItem key={doc.id} value={doc.id}>
-                  {doc.fullName} {doc.specialization ? `(${doc.specialization})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {selectedDoctor && (
-          <Button onClick={() => openSlabDialog()} className="mt-5">
-            <Plus className="h-4 w-4 mr-1" />Add New Slab
-          </Button>
-        )}
+      <div className="flex-1 max-w-md">
+        <Label className="text-sm text-gray-600">Select Doctor</Label>
+        <SearchableSelect
+          className="mt-1 w-full"
+          value={selectedDoctor || ''}
+          onChange={handleSelectDoctor}
+          options={doctors.map(doc => ({
+            value: doc.id,
+            label: doc.fullName,
+            sublabel: doc.specialization || undefined,
+          }))}
+          placeholder="Choose a doctor to set fees..."
+          searchPlaceholder="Search doctor by name..."
+          emptyText="No doctors found"
+        />
       </div>
 
-      {selectedDoctor && (
-        <div className="border rounded-lg p-4 bg-blue-50">
-          <h3 className="font-semibold text-sm mb-2">Fee Slab Rules:</h3>
-          <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
-            <li>Configure day ranges (e.g., 0-3 days, 3-15 days, 15-30 days)</li>
-            <li>Each range has a different fee amount</li>
-            <li>After 30 days, patient is charged as a new patient (base fee)</li>
-            <li>Use day ranges that don't overlap</li>
-          </ul>
-        </div>
-      )}
-
-      {selectedDoctor ? (
-        slabsLoading ? (
-          <div className="text-center py-8 text-gray-400">Loading slabs...</div>
-        ) : slabs.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            No fee slabs configured yet. Click "Add New Slab" to create one.
-          </div>
-        ) : (
-          <div className="border rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>From Days</TableHead>
-                  <TableHead>To Days</TableHead>
-                  <TableHead>Fee Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {slabs.map(slab => (
-                  <TableRow key={slab.id}>
-                    <TableCell className="font-medium">{slab.fromDays}</TableCell>
-                    <TableCell className="font-medium">{slab.toDays}</TableCell>
-                    <TableCell>{fmt(slab.feeAmount)}</TableCell>
-                    <TableCell>
-                      <Badge variant={slab.isActive ? 'default' : 'secondary'}>
-                        {slab.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-gray-500 text-sm">{slab.notes || '—'}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => openSlabDialog(slab)}>
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-red-600 hover:text-red-700"
-                        onClick={() => deleteSlab(slab.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )
+      {!selectedDoctor ? (
+        <div className="text-center py-12 text-gray-400">Select a doctor to configure their fees.</div>
       ) : (
-        <div className="text-center py-12 text-gray-400">Select a doctor to view their fee slabs.</div>
-      )}
-
-      <Dialog open={slabDialog} onOpenChange={setSlabDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingSlabId ? 'Edit Fee Slab' : 'Add New Fee Slab'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            {validationError && (
-              <div className="bg-red-50 border border-red-200 rounded p-2 text-sm text-red-700">
-                {validationError}
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>From Days</Label>
+        <>
+          {/* ── New Patient base fee ───────────────────────────────── */}
+          <div className="border rounded-lg p-4">
+            <h3 className="font-semibold text-sm mb-1">New Patient — Base Fee</h3>
+            <p className="text-xs text-gray-500 mb-3">Charged on the first visit and after the 30-day reset window.</p>
+            <div className="flex items-end gap-3">
+              <div className="w-40">
+                <Label className="text-xs">Charge Amount (₹)</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  className="mt-1"
-                  value={slabForm.fromDays}
-                  onChange={e => setSlabForm(f => ({ ...f, fromDays: e.target.value }))}
-                  placeholder="e.g. 0"
+                  type="number" min={0} step={50} className="mt-1"
+                  value={baseFee}
+                  onChange={e => setBaseFee(e.target.value)}
+                  placeholder="e.g. 1000"
                 />
               </div>
-              <div>
-                <Label>To Days</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  className="mt-1"
-                  value={slabForm.toDays}
-                  onChange={e => setSlabForm(f => ({ ...f, toDays: e.target.value }))}
-                  placeholder="e.g. 3"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Fee Amount (₹)</Label>
-              <Input
-                type="number"
-                min={0}
-                step={50}
-                className="mt-1"
-                value={slabForm.feeAmount}
-                onChange={e => setSlabForm(f => ({ ...f, feeAmount: e.target.value }))}
-                placeholder="e.g. 500"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="isActive"
-                checked={slabForm.isActive}
-                onChange={e => setSlabForm(f => ({ ...f, isActive: e.target.checked }))}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <Label htmlFor="isActive" className="cursor-pointer">Active</Label>
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Input
-                className="mt-1"
-                value={slabForm.notes}
-                onChange={e => setSlabForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="e.g. Early bird discount"
-              />
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <Button variant="outline" onClick={() => setSlabDialog(false)}>Cancel</Button>
-              <Button onClick={saveSlab} disabled={saving}>
-                {saving ? 'Saving...' : editingSlabId ? 'Update Slab' : 'Add Slab'}
+              <Button onClick={saveBaseFee} disabled={savingBase}>
+                {savingBase ? 'Saving...' : 'Save Base Fee'}
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+
+          {/* ── Follow-up day-ranges (multiple, fully editable) ─────── */}
+          <div className="border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-sm">Follow-up — Day-based Charges</h3>
+              <Button size="sm" onClick={addRange}>
+                <Plus className="h-4 w-4 mr-1" />Add Range
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Add as many ranges as you like (e.g. 0–3 → free, 3–10 → ₹500, 10–20 → ₹300…). Edit any value and click Save on that row. Ranges must not overlap; after 30 days the patient is charged as a New Patient again.
+            </p>
+
+            {slabsLoading ? (
+              <div className="text-center py-8 text-gray-400">Loading ranges...</div>
+            ) : (
+              <div className="border rounded-lg overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-24">From Day</TableHead>
+                      <TableHead className="w-24">To Day</TableHead>
+                      <TableHead className="w-28">Charge (₹)</TableHead>
+                      <TableHead className="w-20">Active</TableHead>
+                      <TableHead>Notes</TableHead>
+                      <TableHead className="text-right w-32">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-gray-400 py-6">
+                          No follow-up ranges yet. Click "Add Range" to create one.
+                        </TableCell>
+                      </TableRow>
+                    ) : rows.map(row => (
+                      <TableRow key={row.key} className={row.id ? '' : 'bg-amber-50'}>
+                        <TableCell>
+                          <Input type="number" min={0} step={1} className="h-8"
+                            value={row.fromDays}
+                            onChange={e => updateRow(row.key, { fromDays: e.target.value })}
+                            placeholder="0" />
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" min={0} step={1} className="h-8"
+                            value={row.toDays}
+                            onChange={e => updateRow(row.key, { toDays: e.target.value })}
+                            placeholder="3" />
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" min={0} step={50} className="h-8"
+                            value={row.feeAmount}
+                            onChange={e => updateRow(row.key, { feeAmount: e.target.value })}
+                            placeholder="0 = free" />
+                        </TableCell>
+                        <TableCell>
+                          <input type="checkbox" className="h-4 w-4 rounded border-gray-300"
+                            checked={row.isActive}
+                            onChange={e => updateRow(row.key, { isActive: e.target.checked })} />
+                        </TableCell>
+                        <TableCell>
+                          <Input className="h-8"
+                            value={row.notes}
+                            onChange={e => updateRow(row.key, { notes: e.target.value })}
+                            placeholder="optional" />
+                        </TableCell>
+                        <TableCell className="text-right space-x-2 whitespace-nowrap">
+                          <Button size="sm" onClick={() => saveRow(row)} disabled={savingKey === row.key}>
+                            {savingKey === row.key ? '...' : (row.id ? 'Save' : 'Add')}
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700"
+                            onClick={() => deleteRow(row)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell className="text-gray-400 text-sm font-medium">30+</TableCell>
+                      <TableCell className="text-gray-400 text-sm">—</TableCell>
+                      <TableCell className="text-gray-500 text-sm">
+                        {selectedDoc?.consultationFee != null ? `₹${selectedDoc.consultationFee}` : 'base fee'}
+                      </TableCell>
+                      <TableCell colSpan={3} className="text-gray-400 text-sm italic">
+                        After 30 days → charged as a New Patient (base fee)
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -1274,15 +1390,13 @@ function ReportsTab() {
 }
 
 const TABS = [
-  { id: 'fee-structure', label: 'Fee Structure', icon: DollarSign },
-  { id: 'setup', label: 'Commission Setup', icon: UserCog },
+  { id: 'doctors', label: 'Doctors', icon: UserCog },
   { id: 'commissions', label: 'Commissions', icon: DollarSign },
-  { id: 'settlement', label: 'Settlement', icon: CheckCircle2 },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
 ]
 
 export default function DoctorAccountabilityModule() {
-  const [tab, setTab] = useState('setup')
+  const [tab, setTab] = useState('doctors')
   const [reloadKey, setReloadKey] = useState(0)
   const [addCommissionSignal, setAddCommissionSignal] = useState(0)
 
@@ -1310,8 +1424,8 @@ export default function DoctorAccountabilityModule() {
         toast.success(`Doctor ${res.data.fullName} added`)
         setAddOpen(false)
         setDocForm({ fullName: '', email: '', specialization: '', phone: '', departmentId: '' })
-        setTab('setup')
-        setReloadKey(k => k + 1)   // remount SetupTab so the new doctor appears
+        setTab('doctors')
+        setReloadKey(k => k + 1)   // remount DoctorsTab so the new doctor appears
       } else toast.error(res.error || 'Failed to add doctor')
     } catch (e) {
       toast.error(e.message || 'Failed to add doctor')
@@ -1351,10 +1465,8 @@ export default function DoctorAccountabilityModule() {
         ))}
       </div>
       <div>
-        {tab === 'fee-structure' && <FeeStructureTab key={reloadKey} />}
-        {tab === 'setup' && <SetupTab key={reloadKey} />}
+        {tab === 'doctors' && <DoctorsTab key={reloadKey} />}
         {tab === 'commissions' && <CommissionsTab openAddSignal={addCommissionSignal} />}
-        {tab === 'settlement' && <SettlementTab />}
         {tab === 'reports' && <ReportsTab />}
       </div>
 

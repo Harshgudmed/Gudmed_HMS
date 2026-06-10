@@ -1,9 +1,13 @@
 import { db } from '../config/db.js'
+import { scopedDoctorId } from '../utils/scope.js'
 
 export async function handleGet(req, res, next) {
   try {
     const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
     const { resource, doctorId, status, period } = req.query
+
+    // A logged-in doctor only ever sees their own accountability data.
+    const myDoctorId = scopedDoctorId(req)
 
     // Parse and validate pagination parameters
     let limit = parseInt(req.query.limit) || 10
@@ -13,7 +17,7 @@ export async function handleGet(req, res, next) {
 
     if (resource === 'doctors') {
       const doctors = await db.user.findMany({
-        where: { organizationId: ORG_ID, role: 'doctor', isActive: true },
+        where: { organizationId: ORG_ID, role: 'doctor', isActive: true, ...(myDoctorId ? { id: myDoctorId } : {}) },
         include: {
           department: { select: { id: true, name: true } },
           commissionConfig: true,
@@ -28,6 +32,8 @@ export async function handleGet(req, res, next) {
       if (doctorId) where.doctorId = doctorId
       if (status) where.status = status
       if (period) where.period = period
+      // Force a doctor's own id regardless of any doctorId query param.
+      if (myDoctorId) where.doctorId = myDoctorId
 
       const [commissions, total] = await Promise.all([
         db.doctorCommission.findMany({
@@ -56,7 +62,7 @@ export async function handleGet(req, res, next) {
 
     if (resource === 'stats') {
       const doctors = await db.user.findMany({
-        where: { organizationId: ORG_ID, role: 'doctor' }, // ORG_ID set at function start
+        where: { organizationId: ORG_ID, role: 'doctor', ...(myDoctorId ? { id: myDoctorId } : {}) }, // a doctor sees only their own stats
         include: {
           commissionConfig: true,
           commissions: true,
@@ -126,7 +132,7 @@ export async function handlePost(req, res, next) {
     }
 
     if (resource === 'commission') {
-      const { doctorId, invoiceId, invoiceAmount, commissionRate, commissionType, commissionAmount, period } = req.body
+      const { doctorId, invoiceId, invoiceAmount, commissionRate, commissionType, commissionAmount } = req.body
       const commission = await db.doctorCommission.create({
         data: {
           organizationId: ORG_ID,
@@ -136,7 +142,6 @@ export async function handlePost(req, res, next) {
           commissionRate: parseFloat(commissionRate) || 0,
           commissionType,
           commissionAmount: parseFloat(commissionAmount) || 0,
-          period: period || null,
           status: 'pending',
         },
         include: {
