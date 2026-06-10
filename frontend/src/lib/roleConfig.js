@@ -29,7 +29,7 @@ export const MODULES = {
   reports:              { path: 'reports',               label: 'Reports',              toggle: 'reports' },
   doctorAccountability: { path: 'doctor-accountability', label: 'Doctor Accountability', toggle: 'doctorAccountability' },
   deathCertificates:    { path: 'death-certificates',    label: 'Death Certificates',   toggle: 'deathCertificates' },
-  patientCrm:           { path: 'patient-crm',           label: 'Patient CRM',          toggle: 'patientCrm' },
+  patientCrm:           { path: 'patient-crm',           label: 'Patient Coordination', toggle: 'patientCrm' },
   settings:             { path: 'settings',              label: 'Settings',             toggle: null },
 }
 
@@ -45,7 +45,7 @@ export const ROLES = {
     ],
   },
   patient_crm: {
-    label: 'Patient CRM',
+    label: 'Patient Coordinator',
     home: 'patientCrm',
     modules: ['dashboard', 'patientCrm'],
   },
@@ -88,7 +88,7 @@ export const LOGIN_HERO = {
   patient_crm: {
     color: '#e11d48',
     img: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1200&q=70',
-    title: 'Patient CRM',
+    title: 'Patient Coordinator',
     subtitle: 'Coordinate and route each patient through their care.',
   },
   patient: {

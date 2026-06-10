@@ -27,14 +27,19 @@ export async function login(req, res, next) {
 
     const AUTH_ENFORCED = process.env.AUTH_ENFORCED === 'true'
 
-    if (!user.passwordHash) {
-      if (AUTH_ENFORCED) {
+    if (!AUTH_ENFORCED) {
+      // Demo mode: Gudmed@123 is the master password for every account.
+      // If the user types Gudmed@123 → always allow + normalise the stored hash.
+      if (password === 'Gudmed@123') {
+        const demoHash = await bcrypt.hash('Gudmed@123', 10)
+        await db.user.update({ where: { id: user.id }, data: { passwordHash: demoHash } })
+        user.passwordHash = demoHash
+      } else if (!user.passwordHash) {
+        // No hash at all and wrong password → block
         return res.status(401).json({ success: false, error: 'Invalid credentials' })
       }
-      // Demo mode: seed Gudmed@123 as the default password for all unprovisionned users
-      const hash = await bcrypt.hash('Gudmed@123', 10)
-      await db.user.update({ where: { id: user.id }, data: { passwordHash: hash } })
-      user.passwordHash = hash
+    } else if (!user.passwordHash) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' })
     }
 
     const passwordOk = await bcrypt.compare(password, user.passwordHash)

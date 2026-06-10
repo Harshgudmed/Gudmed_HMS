@@ -98,7 +98,7 @@ export default function PatientCrmModule() {
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" /> Patient CRM
+            <Users className="h-5 w-5" /> Patient Coordination
             <span className="ml-2 inline-flex items-center gap-1.5 text-xs font-normal text-gray-400">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
@@ -135,7 +135,7 @@ export default function PatientCrmModule() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Patient</TableHead>
-                  {canAssign && <TableHead>Assigned CRM user</TableHead>}
+                  {canAssign && <TableHead>Assigned coordinator</TableHead>}
                   <TableHead>Routed to</TableHead>
                   <TableHead className="text-right">Send to department</TableHead>
                 </TableRow>
@@ -155,8 +155,8 @@ export default function PatientCrmModule() {
                           value={p.assignedCrmUserId || '__none'}
                           onChange={(v) => assign(p.id, v)}
                           placeholder="Unassigned"
-                          searchPlaceholder="Search CRM user…"
-                          emptyText="No CRM users"
+                          searchPlaceholder="Search coordinator…"
+                          emptyText="No coordinators"
                           options={[
                             { value: '__none', label: 'Unassigned' },
                             ...crmUsers.map((u) => ({ value: u.id, label: u.fullName, sublabel: u.email })),

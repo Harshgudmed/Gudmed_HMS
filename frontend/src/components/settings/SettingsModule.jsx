@@ -41,7 +41,7 @@ const ROLE_LABELS = {
   radiology_tech: 'Radiology Technician',
   billing_clerk: 'Billing Clerk',
   inventory_manager: 'Inventory Manager',
-  patient_crm: 'Patient CRM',
+  patient_crm: 'Patient Coordinator',
 }
 
 const INDIAN_STATES = [
@@ -78,7 +78,7 @@ const ALL_MODULES = [
   { key: 'inpatient',            label: 'Inpatient',            description: 'Ward and bed management' },
   { key: 'reports',              label: 'Reports',              description: 'Analytics and reports' },
   { key: 'doctorAccountability', label: 'Doctor Accountability', description: 'Doctor commissions and settlements' },
-  { key: 'patientCrm',           label: 'Patient CRM',          description: 'Assign patients to CRM users and route to departments' },
+  { key: 'patientCrm',           label: 'Patient Coordination', description: 'Assign patients to a coordinator and route to departments' },
   { key: 'deathCertificates',    label: 'Death Certificates',   description: 'Death certificate issuance' },
   { key: 'inventory',            label: 'Inventory',            description: 'Stock management across departments' },
   { key: 'accounting',           label: 'Accounting',           description: 'Financial accounting and reporting' },

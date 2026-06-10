@@ -298,7 +298,7 @@ const PICKER_TILES = [
   { to: '/admin/login',        label: 'Administrator', desc: 'Manage the whole hospital',     Icon: ShieldCheck,    color: '#2563eb' },
   { to: '/doctor/login',       label: 'Doctor',        desc: 'Consultations & my patients',   Icon: Stethoscope,    color: '#0891b2' },
   { to: '/receptionist/login', label: 'Receptionist',  desc: 'Appointments & front desk',     Icon: ConciergeBell,  color: '#9333ea' },
-  { to: '/patient_crm/login',  label: 'Patient CRM',   desc: 'Manage & route assigned patients', Icon: ClipboardList, color: '#e11d48' },
+  { to: '/patient_crm/login',  label: 'Patient Coordinator',   desc: 'Manage & route assigned patients', Icon: ClipboardList, color: '#e11d48' },
   { to: '/patient/login',      label: 'Patient',       desc: 'View my reports & visits',      Icon: HeartPulse,     color: '#0d9488' },
 ]
 
