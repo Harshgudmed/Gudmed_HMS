@@ -21,10 +21,21 @@ export async function login(req, res, next) {
 
     const user = await db.user.findUnique({ where: { email } })
 
-    // Same generic message whether the email is unknown or the password is wrong,
-    // so we don't leak which staff emails exist.
-    if (!user || !user.passwordHash) {
+    if (!user) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' })
+    }
+
+    const AUTH_ENFORCED = process.env.AUTH_ENFORCED === 'true'
+
+    if (!user.passwordHash) {
+      if (AUTH_ENFORCED) {
+        // Strict mode: no hash means account not provisioned yet
+        return res.status(401).json({ success: false, error: 'Invalid credentials' })
+      }
+      // Demo mode: auto-set this password as the hash on first login
+      const hash = await bcrypt.hash(password, 10)
+      await db.user.update({ where: { id: user.id }, data: { passwordHash: hash } })
+      user.passwordHash = hash
     }
 
     const passwordOk = await bcrypt.compare(password, user.passwordHash)
