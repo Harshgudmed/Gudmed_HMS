@@ -29,11 +29,10 @@ export async function login(req, res, next) {
 
     if (!user.passwordHash) {
       if (AUTH_ENFORCED) {
-        // Strict mode: no hash means account not provisioned yet
         return res.status(401).json({ success: false, error: 'Invalid credentials' })
       }
-      // Demo mode: auto-set this password as the hash on first login
-      const hash = await bcrypt.hash(password, 10)
+      // Demo mode: seed Gudmed@123 as the default password for all unprovisionned users
+      const hash = await bcrypt.hash('Gudmed@123', 10)
       await db.user.update({ where: { id: user.id }, data: { passwordHash: hash } })
       user.passwordHash = hash
     }
