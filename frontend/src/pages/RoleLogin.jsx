@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Navigate, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Loader2, ShieldCheck, Stethoscope, ConciergeBell, UserCog, ClipboardList } from 'lucide-react'
@@ -42,7 +42,17 @@ export default function RoleLogin() {
   const roleLabel = ROLES[role].label
   const visual = ROLE_VISUAL[role] || { Icon: UserCog, color: '#2563eb' }
   const RoleIcon = visual.Icon
-  const hero = LOGIN_HERO[role] // split-screen hospital photo panel
+  const hero = LOGIN_HERO[role]
+  const [imgLoaded, setImgLoaded] = useState(false)
+
+  // Preload hero image so it's ready before it's needed
+  useEffect(() => {
+    if (!hero?.img) return
+    setImgLoaded(false)
+    const img = new Image()
+    img.src = hero.img
+    img.onload = () => setImgLoaded(true)
+  }, [hero?.img])
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -69,13 +79,20 @@ export default function RoleLogin() {
     <div className="min-h-screen flex">
       {hero && (
         <div
-          className="relative hidden lg:flex lg:w-1/2 flex-col justify-end bg-cover bg-center p-12"
+          className="relative hidden lg:flex lg:w-1/2 flex-col justify-end bg-cover bg-center p-12 transition-all duration-700"
           style={{
             backgroundColor: '#171717',
-            backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.15) 45%, rgba(0,0,0,0) 100%), url(${hero.img})`,
+            backgroundImage: imgLoaded
+              ? `linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.15) 45%, rgba(0,0,0,0) 100%), url(${hero.img})`
+              : 'none',
+            opacity: imgLoaded ? 1 : 0.85,
           }}
         >
-          <div className="text-white">
+          {/* Skeleton shimmer while image loads */}
+          {!imgLoaded && (
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 animate-pulse" />
+          )}
+          <div className="relative text-white">
             <h2 className="text-3xl font-bold leading-tight drop-shadow-md">{hero.title}</h2>
             <p className="mt-2 max-w-sm text-white/90 drop-shadow">{hero.subtitle}</p>
           </div>
