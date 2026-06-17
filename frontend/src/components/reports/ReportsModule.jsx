@@ -34,7 +34,7 @@ import {
   TrendingUp,
   TrendingDown,
   Users,
-  DollarSign,
+  IndianRupee,
   Clock,
   BedDouble,
   Heart,
@@ -933,7 +933,7 @@ export default function ReportsModule() {
               value={kpiData.todayRevenue.value}
               change={kpiData.todayRevenue.change}
               trend={kpiData.todayRevenue.trend}
-              icon={<DollarSign className="h-4 w-4" />}
+              icon={<IndianRupee className="h-4 w-4" />}
               prefix="₹"
             />
             <KPICard

@@ -12,7 +12,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import {
-  UserCog, DollarSign, CheckCircle2, BarChart3,
+  UserCog, IndianRupee, CheckCircle2, BarChart3,
   Search, Plus, Edit2, Trash2, CheckSquare, RefreshCw,
   Users, Clock, Wallet, Printer, FileDown, CheckCheck, ChevronLeft, ChevronRight,
 } from 'lucide-react'
@@ -1391,7 +1391,7 @@ function ReportsTab() {
 
 const TABS = [
   { id: 'doctors', label: 'Doctors', icon: UserCog },
-  { id: 'commissions', label: 'Commissions', icon: DollarSign },
+  { id: 'commissions', label: 'Commissions', icon: IndianRupee },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
 ]
 
@@ -1443,7 +1443,7 @@ export default function DoctorAccountabilityModule() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => { setTab('commissions'); setAddCommissionSignal(s => s + 1) }}>
-            <DollarSign className="h-4 w-4 mr-2" />Add Commission
+            <IndianRupee className="h-4 w-4 mr-2" />Add Commission
           </Button>
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />Add Doctor

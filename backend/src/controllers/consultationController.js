@@ -36,7 +36,13 @@ export async function getAll(req, res, next) {
           doctor: { select: { id: true, fullName: true, specialization: true } },
           prescriptions: true,
           labOrders: true,
-          radiologyOrders: true,
+          // Include the exam so the consultation view/edit can show the exam name
+          // (radiologyOrder only stores examId).
+          radiologyOrders: {
+            include: {
+              exam: { select: { id: true, examName: true, examCode: true, examCategory: true, bodyPart: true } },
+            },
+          },
         },
       }),
       db.consultation.count({ where })

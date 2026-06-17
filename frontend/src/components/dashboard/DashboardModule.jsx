@@ -3,7 +3,7 @@ import { useOrgSettings } from '@/lib/useOrgSettings'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
-  Users, Calendar, Clock, DollarSign, FlaskConical, Pill, BedDouble,
+  Users, Calendar, Clock, IndianRupee, FlaskConical, Pill, BedDouble,
   AlertCircle, TrendingUp, Timer, UserPlus, Stethoscope, Receipt, Activity
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -155,7 +155,7 @@ export default function DashboardModule() {
         <Card className="cursor-pointer hover:shadow-lg hover:border-green-300 transition-all" onClick={() => navigate('/billing')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Today's Revenue</CardTitle>
-            <DollarSign className="h-5 w-5 text-green-600" />
+            <IndianRupee className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">₹ {(stats.todayRevenue || 0).toLocaleString()}</div>

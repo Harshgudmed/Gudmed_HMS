@@ -1,10 +1,15 @@
 import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../config/security.js'
 
-// Master switch for the new access control. While OFF (default) the API behaves
-// exactly as before — requests are never blocked and fall back to the demo org —
-// so the live demo keeps working while the frontend login is built. Flip to
-// `true` (AUTH_ENFORCED=true) once every role can log in and is correctly scoped.
-const AUTH_ENFORCED = process.env.AUTH_ENFORCED === 'true'
+// Access-control master switch.
+// FAIL-CLOSED IN PRODUCTION (C7): in production the API is enforced UNLESS you
+// explicitly opt out with AUTH_ENFORCED=false. Outside production it stays
+// tolerant by default so local dev / the demo keep working without a login.
+// This prevents a missing env var from silently serving the API unauthenticated.
+const IS_PROD = process.env.NODE_ENV === 'production'
+const AUTH_ENFORCED = IS_PROD
+  ? process.env.AUTH_ENFORCED !== 'false' // prod: on unless explicitly disabled
+  : process.env.AUTH_ENFORCED === 'true' // dev/demo: off unless explicitly enabled
 
 const DEFAULT_ORG = process.env.ORGANIZATION_ID || 'org-demo'
 
@@ -29,7 +34,7 @@ export function authenticate(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret')
+    const decoded = jwt.verify(token, JWT_SECRET)
     req.user = decoded
     req.organizationId = decoded.organizationId || (AUTH_ENFORCED ? undefined : DEFAULT_ORG)
     if (AUTH_ENFORCED && !req.organizationId) {

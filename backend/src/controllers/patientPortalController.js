@@ -34,7 +34,7 @@ export async function getMyDashboard(req, res, next) {
       logoUrl:        org?.logoUrl || null,
     }
 
-    const [appointments, prescriptions, labOrders, radiologyOrders, invoices] = await Promise.all([
+    const [appointments, prescriptions, labOrders, radiologyOrders, invoices, patientDocuments] = await Promise.all([
       db.appointment.findMany({
         where: { patientId },
         orderBy: { appointmentDate: 'desc' },
@@ -60,6 +60,7 @@ export async function getMyDashboard(req, res, next) {
         include: { exam: true, report: true },
       }),
       db.invoice.findMany({ where: { patientId }, orderBy: { invoiceDate: 'desc' }, take: 25 }),
+      db.patientDocument.findMany({ where: { patientId }, orderBy: { uploadedAt: 'desc' } }),
     ])
 
     const billable = invoices.filter(i => i.status !== 'cancelled' && i.paymentStatus !== 'cancelled')
@@ -104,9 +105,74 @@ export async function getMyDashboard(req, res, next) {
         labOrders,
         radiologyOrders,
         invoices,
+        patientDocuments,
         billing: { totalBilled, totalPaid, balanceDue, invoiceCount: billable.length },
       },
     })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/patient-portal/documents
+ * Upload a document (KYC, lab report, etc.) for the logged-in patient.
+ */
+export async function uploadDocument(req, res, next) {
+  try {
+    const patientId = req.user?.patientId
+    if (!patientId) return res.status(401).json({ success: false, error: 'Not authenticated' })
+
+    const { documentType, title } = req.body
+    if (!documentType) return res.status(400).json({ success: false, error: 'Missing documentType' })
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' })
+
+    const patient = await db.patient.findUnique({ where: { id: patientId } })
+    if (!patient) return res.status(404).json({ success: false, error: 'Patient not found' })
+
+    // Generate a URL that the frontend can use to view the file
+    // Assumes server is configured to serve static files from /uploads
+    // (e.g. app.use('/uploads', express.static(path.join(__dirname, 'uploads'))))
+    const fileUrl = `/uploads/patient-documents/${req.file.filename}`
+
+    const newDoc = await db.patientDocument.create({
+      data: {
+        organizationId: patient.organizationId,
+        patientId,
+        documentType,
+        title: title || documentType,
+        fileUrl,
+        fileType: req.file.mimetype,
+      }
+    })
+
+    res.status(201).json({ success: true, data: newDoc })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * DELETE /api/patient-portal/documents/:id
+ * Delete a previously uploaded document.
+ */
+export async function deleteDocument(req, res, next) {
+  try {
+    const patientId = req.user?.patientId
+    if (!patientId) return res.status(401).json({ success: false, error: 'Not authenticated' })
+
+    const documentId = req.params.id
+
+    // Check if it belongs to the patient
+    const doc = await db.patientDocument.findUnique({ where: { id: documentId } })
+    if (!doc || doc.patientId !== patientId) {
+      return res.status(404).json({ success: false, error: 'Document not found' })
+    }
+
+    // Delete from DB (optionally from disk too, but keeping it simple for now)
+    await db.patientDocument.delete({ where: { id: documentId } })
+
+    res.json({ success: true, message: 'Document deleted successfully' })
   } catch (err) {
     next(err)
   }

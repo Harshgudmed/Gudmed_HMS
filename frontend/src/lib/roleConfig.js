@@ -25,6 +25,10 @@ export const MODULES = {
   laboratory:           { path: 'laboratory',            label: 'Laboratory',           toggle: 'laboratory' },
   radiology:            { path: 'radiology',             label: 'Radiology',            toggle: 'radiology' },
   inpatient:            { path: 'inpatient',             label: 'Inpatient',            toggle: 'inpatient' },
+  clinicalOrders:       { path: 'clinical-orders',       label: 'Doctor Notes & Orders',       toggle: null },
+  dayCare:              { path: 'day-care',              label: 'Day Care',             toggle: 'dayCare' },
+  ambulance:            { path: 'ambulance',             label: 'Ambulance',            toggle: 'ambulance' },
+  insurance:            { path: 'insurance',             label: 'TPA / Insurance',      toggle: 'insurance' },
   billing:              { path: 'billing',               label: 'Billing',              toggle: null },
   reports:              { path: 'reports',               label: 'Reports',              toggle: 'reports' },
   doctorAccountability: { path: 'doctor-accountability', label: 'Doctor Accountability', toggle: 'doctorAccountability' },
@@ -40,7 +44,8 @@ export const ROLES = {
     home: 'dashboard',
     modules: [
       'dashboard', 'patients', 'preTriage', 'queue', 'triage', 'consultations',
-      'pharmacy', 'laboratory', 'radiology', 'inpatient', 'reports',
+      'pharmacy', 'laboratory', 'radiology', 'inpatient', 'dayCare', 'ambulance',
+      'insurance', 'billing', 'reports',
       'doctorAccountability', 'patientCrm', 'deathCertificates', 'settings',
     ],
   },
@@ -52,12 +57,45 @@ export const ROLES = {
   doctor: {
     label: 'Doctor',
     home: 'consultations',
-    modules: ['dashboard', 'queue', 'consultations', 'patients', 'doctorAccountability'],
+    modules: ['dashboard', 'queue', 'consultations', 'clinicalOrders', 'patients', 'doctorAccountability'],
   },
   receptionist: {
     label: 'Receptionist',
     home: 'appointments',
     modules: ['dashboard', 'appointments', 'queue', 'patients', 'patientCrm', 'billing'],
+  },
+
+  // ── Phase 3.0: clinical-orders roles. Mapped in backend rbac.js already; these
+  //    entries activate login + per-role landing/sidebar on the web app. ──
+  nurse: {
+    label: 'Nurse',
+    home: 'inpatient',
+    modules: ['dashboard', 'inpatient', 'patients'],
+  },
+  pharmacist: {
+    label: 'Pharmacist',
+    home: 'pharmacy',
+    modules: ['dashboard', 'pharmacy', 'inpatient'],
+  },
+  lab_technician: {
+    label: 'Lab Technician',
+    home: 'laboratory',
+    modules: ['dashboard', 'laboratory'],
+  },
+  radiology_technician: {
+    label: 'Radiology Technician',
+    home: 'radiology',
+    modules: ['dashboard', 'radiology'],
+  },
+  billing: {
+    label: 'Billing',
+    home: 'billing',
+    modules: ['dashboard', 'billing', 'inpatient', 'reports'],
+  },
+  housekeeping: {
+    label: 'Housekeeping',
+    home: 'inpatient',
+    modules: ['dashboard', 'inpatient'],
   },
 }
 
@@ -90,6 +128,42 @@ export const LOGIN_HERO = {
     img: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1200&q=70',
     title: 'Patient Coordinator',
     subtitle: 'Coordinate and route each patient through their care.',
+  },
+  nurse: {
+    color: '#0d9488',
+    img: 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=1200&q=70',
+    title: 'Nursing Station',
+    subtitle: 'Vitals, eMAR, clinical notes and bedside orders.',
+  },
+  pharmacist: {
+    color: '#7c3aed',
+    img: 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=70',
+    title: 'Pharmacy',
+    subtitle: 'Dispense, inventory and medication orders.',
+  },
+  lab_technician: {
+    color: '#0284c7',
+    img: 'https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=1200&q=70',
+    title: 'Laboratory',
+    subtitle: 'Samples, processing and verified results.',
+  },
+  radiology_technician: {
+    color: '#4f46e5',
+    img: 'https://images.unsplash.com/photo-1530497610245-94d3c16cda28?auto=format&fit=crop&w=1200&q=70',
+    title: 'Radiology',
+    subtitle: 'Imaging worklist, scheduling and reports.',
+  },
+  billing: {
+    color: '#d97706',
+    img: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1200&q=70',
+    title: 'Billing',
+    subtitle: 'Bills, receipts, payments and collections.',
+  },
+  housekeeping: {
+    color: '#16a34a',
+    img: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=70',
+    title: 'Housekeeping',
+    subtitle: 'Bed turnover and cleaning worklist.',
   },
   patient: {
     color: '#0d9488',

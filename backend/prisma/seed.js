@@ -1,6 +1,10 @@
 import { db } from '../src/config/db.js'
 import bcrypt from 'bcryptjs'
 
+// One password for every demo account. This MUST match the demo password the
+// frontend tells people to use, so prod and local credentials never diverge.
+const DEMO_PASSWORD = 'Gudmed@123'
+
 async function main() {
   console.log('Seeding production database...')
 
@@ -35,10 +39,12 @@ async function main() {
   console.log('✅ Organization created:', org.name)
 
   // 2. Create admin user
-  const hash = await bcrypt.hash('Admin@123', 10)
+  const hash = await bcrypt.hash(DEMO_PASSWORD, 10)
   const admin = await db.user.upsert({
     where: { id: 'user-admin' },
-    update: {},
+    // Re-assert the password on every seed so a hash that drifted (e.g. mutated by
+    // an old demo login) is reset back to the known DEMO_PASSWORD.
+    update: { passwordHash: hash },
     create: {
       id: 'user-admin',
       organizationId: 'org-demo',
@@ -59,10 +65,10 @@ async function main() {
     { id: 'user-doctor3', name: 'Dr. Anita Joshi', email: 'anita@gudmed.in', spec: 'Pediatrics' },
   ]
   for (const doc of doctors) {
-    const dHash = await bcrypt.hash('Doctor@123', 10)
+    const dHash = await bcrypt.hash(DEMO_PASSWORD, 10)
     await db.user.upsert({
       where: { id: doc.id },
-      update: {},
+      update: { passwordHash: dHash },
       create: {
         id: doc.id,
         organizationId: 'org-demo',
@@ -101,9 +107,9 @@ async function main() {
   }
 
   console.log('\n🎉 Database seeded successfully!')
-  console.log('\nLogin credentials:')
-  console.log('Admin:  admin@gudmed.in / Admin@123')
-  console.log('Doctor: priya@gudmed.in / Doctor@123')
+  console.log('\nLogin credentials (same password for every demo account):')
+  console.log(`Admin:  admin@gudmed.in / ${DEMO_PASSWORD}`)
+  console.log(`Doctor: priya@gudmed.in / ${DEMO_PASSWORD}`)
 }
 
 main()

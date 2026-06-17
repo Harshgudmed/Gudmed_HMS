@@ -2,11 +2,15 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { db } from '../config/db.js'
 import { TOKEN_COOKIE, authCookieOptions, clearCookieOptions } from '../config/cookie.js'
+import { JWT_SECRET } from '../config/security.js'
 
 /**
  * POST /api/auth/login
  * Body: { email, password }
- * Returns a JWT containing userId, organizationId, role, email.
+ * Returns a JWT containing userId, id, organizationId, role, fullName, email.
+ * (`id` and `fullName` are included so server-side actor capture —
+ *  Created/Acknowledged/Completed By, note authorship, audit — resolves from
+ *  req.user without an extra DB lookup. `userId` is kept for backward compat.)
  *
  * The hospital (organization) is derived from the user record — there is no
  * hospital segment in the URL, so a staff email is unique across the system.
@@ -59,11 +63,13 @@ export async function login(req, res, next) {
     const token = jwt.sign(
       {
         userId: user.id,
+        id: user.id, // alias: lets req.user.id resolve for actor capture across modules
         organizationId: orgId,
         role: user.role,
+        fullName: user.fullName, // actor display name (Created/Completed By, note author)
         email: user.email,
       },
-      process.env.JWT_SECRET || 'secret',
+      JWT_SECRET,
       { expiresIn: '8h' }
     )
 
@@ -118,7 +124,7 @@ export async function patientLogin(req, res, next) {
     const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ')
     const token = jwt.sign(
       { patientId: patient.id, organizationId: patient.organizationId, role: 'patient', name: fullName },
-      process.env.JWT_SECRET || 'secret',
+      JWT_SECRET,
       { expiresIn: '8h' }
     )
     res.cookie(TOKEN_COOKIE, token, authCookieOptions)

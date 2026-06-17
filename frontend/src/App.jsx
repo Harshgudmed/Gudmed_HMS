@@ -10,6 +10,7 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import RoleLogin from '@/pages/RoleLogin'
 import PatientLogin from '@/pages/PatientLogin'
 import PatientDashboard from '@/pages/PatientDashboard'
+import PatientKycPage from '@/pages/PatientKycPage'
 import {
   AUTH_ENFORCED, MODULES, ROLES, KNOWN_ROLES, isKnownRole, homePathFor,
 } from '@/lib/roleConfig'
@@ -32,6 +33,10 @@ import PharmacyPage from './pages/PharmacyPage.jsx'
 import LaboratoryPage from './pages/LaboratoryPage.jsx'
 import RadiologyPage from './pages/RadiologyPage.jsx'
 import InpatientPage from './pages/InpatientPage.jsx'
+import ClinicalOrdersPage from './pages/ClinicalOrdersPage.jsx'
+import DayCarePage from './pages/DayCarePage.jsx'
+import AmbulancePage from './pages/AmbulancePage.jsx'
+import InsurancePage from './pages/InsurancePage.jsx'
 import BillingPage from './pages/BillingPage.jsx'
 import ReportsPage from './pages/ReportsPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
@@ -53,6 +58,10 @@ const PAGE_BY_MODULE = {
   laboratory:           LaboratoryPage,
   radiology:            RadiologyPage,
   inpatient:            InpatientPage,
+  clinicalOrders:       ClinicalOrdersPage,
+  dayCare:              DayCarePage,
+  ambulance:            AmbulancePage,
+  insurance:            InsurancePage,
   billing:              BillingPage,
   reports:              ReportsPage,
   doctorAccountability: DoctorAccountabilityPage,
@@ -73,6 +82,10 @@ const LEGACY_NAV = [
   { to: '/laboratory',            label: 'Laboratory' },
   { to: '/radiology',             label: 'Radiology' },
   { to: '/inpatient',             label: 'Inpatient' },
+  { to: '/day-care',              label: 'Day Care' },
+  { to: '/ambulance',             label: 'Ambulance' },
+  { to: '/insurance',             label: 'TPA / Insurance' },
+  { to: '/billing',               label: 'Billing' },
   { to: '/reports',               label: 'Reports' },
   { to: '/doctor-accountability', label: 'Doctor Accountability' },
   { to: '/death-certificates',    label: 'Death Certificates' },
@@ -89,6 +102,9 @@ const MODULE_BY_PATH = {
   '/laboratory':            'laboratory',
   '/radiology':             'radiology',
   '/inpatient':             'inpatient',
+  '/day-care':              'dayCare',
+  '/ambulance':             'ambulance',
+  '/insurance':             'insurance',
   '/reports':               'reports',
   '/doctor-accountability': 'doctorAccountability',
   '/death-certificates':    'deathCertificates',
@@ -214,6 +230,9 @@ function LegacyApp() {
         <Route path="/laboratory"            element={<LaboratoryPage />} />
         <Route path="/radiology"             element={<RadiologyPage />} />
         <Route path="/inpatient"             element={<InpatientPage />} />
+        <Route path="/day-care"              element={<DayCarePage />} />
+        <Route path="/ambulance"             element={<AmbulancePage />} />
+        <Route path="/insurance"             element={<InsurancePage />} />
         <Route path="/billing"               element={<BillingPage />} />
         <Route path="/reports"               element={<ReportsPage />} />
         <Route path="/death-certificates"    element={<DeathCertificatePage />} />
@@ -281,7 +300,13 @@ function PatientPortal() {
   if (loading) return null
   if (!user) return <Navigate to="/patient/login" replace />
   if (user.role !== 'patient') return <Navigate to={homePathFor(user.role)} replace />
-  return <PatientDashboard />
+  
+  return (
+    <Routes>
+      <Route path="/" element={<PatientDashboard />} />
+      <Route path="/kyc" element={<PatientKycPage />} />
+    </Routes>
+  )
 }
 
 // Root: send a logged-in user to their workspace, otherwise show a role picker.

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, LogOut, CalendarDays, Pill, FlaskConical, Scan, Wallet, User,
-  AlertTriangle, Activity, RefreshCw, History, Eye,
+  AlertTriangle, Activity, RefreshCw, History, Eye, UploadCloud, ChevronRight
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import Logo from '@/components/Logo'
 import client from '@/api/client'
 import { useAuth } from '@/lib/auth'
+import { Link } from 'react-router-dom'
 
 // Doctor names in the data already include a "Dr." prefix for most records — don't double it.
 function docName(name) {
@@ -122,7 +123,7 @@ export default function PatientDashboard() {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">Could not load your data.</div>
   }
 
-  const { branding = {}, profile, stats, upcomingAppointments, appointments, prescriptions, labOrders, radiologyOrders, billing } = data
+  const { branding = {}, profile, stats, upcomingAppointments, appointments, prescriptions, labOrders, radiologyOrders, billing, patientDocuments = [] } = data
   const navbar = branding.navbarColor || '#2E4168'
   const primary = branding.primaryColor || '#2563eb'
   const onDark = !isLightColor(navbar)
@@ -178,6 +179,26 @@ export default function PatientDashboard() {
           <StatCard icon={Scan} label="Radiology" value={stats.radiologyReports} accent="#0891b2" />
           <StatCard icon={Wallet} label="Balance due" value={money(stats.balanceDue)} accent={stats.balanceDue > 0 ? '#dc2626' : '#16a34a'} />
         </div>
+
+        {/* KYC Link Card */}
+        <Link to="/patient/kyc" className="block col-span-full">
+          <Card className="hover:border-blue-300 hover:shadow-md transition-all cursor-pointer bg-blue-50/30">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                  <UploadCloud className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Upload KYC & Medical Documents</h3>
+                  <p className="text-sm text-gray-500">Aadhaar, PAN, Insurance, Reports, and Prescriptions</p>
+                </div>
+              </div>
+              <div className="text-blue-600 flex items-center text-sm font-medium">
+                Manage Documents <ChevronRight className="h-4 w-4 ml-1" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Upcoming appointments */}

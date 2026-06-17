@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, differenceInDays } from 'date-fns'
 import { getOrgSettings } from '@/lib/orgSettings'
+import { drName } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
   BedDouble, Plus, Edit, Trash2, Search, Eye, RefreshCw, ArrowRight, LogOut,
-  AlertCircle, Printer, FileText, ClipboardList, DollarSign, BarChart2,
+  AlertCircle, Printer, FileText, ClipboardList, IndianRupee, BarChart2,
   Loader2, Activity, Stethoscope, UserPlus, Building2, User, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,8 +52,8 @@ function printViaIframe(html) {
   }, 300)
 }
 
-const WARD_TYPES = ['General','Private','Semi-Private','ICU','NICU','Pediatric','Maternity','Emergency','Isolation']
-const BED_TYPES = ['Standard','ICU','Isolation','Bariatric']
+const WARD_TYPES = ['General','Private','Semi-Private','ICU','NICU','PICU','CCU','HDU','Burn Unit','OT / Operation Theatre','Recovery / Post-Op','Dialysis','Pediatric','Maternity','Emergency','Isolation']
+const BED_TYPES = ['Standard','ICU','Ventilator','Burn Care','OT Table','Isolation','Bariatric']
 const ADMISSION_TYPES = ['Emergency','Elective','Transfer']
 const DISCHARGE_CONDITIONS = ['Improved','Recovered','Unchanged','Worsened','Deceased','Transferred']
 const NOTE_TYPES = ['Nursing','Doctor','Progress','Procedure','Observation']
@@ -68,8 +69,8 @@ function admissionStatusBadge(status) {
   return <Badge className={map[status]||'bg-gray-100 text-gray-800'}>{status}</Badge>
 }
 
-const emptyWard = { name:'', code:'', type:'General', capacity:10, floor:'', chargeNurse:'', phone:'' }
-const emptyAdmission = { patientId:'', wardId:'', bedId:'', admissionType:'Emergency', admissionDiagnosis:'', chiefComplaint:'', expectedLengthOfStay:3, depositAmount:0, admissionNotes:'', isCritical:false, criticalLevel:'none' }
+const emptyWard = { name:'', code:'', type:'General', capacity:10, building:'', floor:'', departmentId:'', chargeNurse:'', phone:'' }
+const emptyAdmission = { patientId:'', wardId:'', bedId:'', departmentId:'', doctorId:'', admissionType:'Emergency', admissionDiagnosis:'', chiefComplaint:'', expectedLengthOfStay:3, depositAmount:0, admissionNotes:'', isCritical:false, criticalLevel:'none' }
 const emptyDischarge = { dischargeDiagnosis:'', treatmentSummary:'', medicationsOnDischarge:'', followUpInstructions:'', dischargeCondition:'Improved', followUpDate:'', dischargeNotes:'' }
 const emptyNote = { type:'Nursing', text:'', bp:'', temp:'', pulse:'', spo2:'', weight:'' }
 const emptyCharge = { name:'', type:'Other', amount:'', quantity:1 }
@@ -78,6 +79,7 @@ const emptyAddBed = { wardId:'', bedNumber:'', type:'Standard' }
 export default function InpatientModule() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [doctors, setDoctors] = useState([])
+  const [departments, setDepartments] = useState([])
   const [wards, setWards] = useState([])
   const [admissions, setAdmissions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -91,6 +93,7 @@ export default function InpatientModule() {
 
   const [showWardDialog, setShowWardDialog] = useState(false)
   const [wardForm, setWardForm] = useState(emptyWard)
+  const [buildingFilter, setBuildingFilter] = useState('all')
   const [editingWardId, setEditingWardId] = useState(null)
   const [savingWard, setSavingWard] = useState(false)
 
@@ -144,10 +147,11 @@ export default function InpatientModule() {
       const admissionsOffset = (patientHistoryPage - 1) * ADMISSIONS_PER_PAGE
       // Fetch all admissions (admitted + discharged) so history tab works
       // AND separately fetch only admitted to guarantee Discharge/Dashboard tabs stay clean
-      const [wRes, aAllRes, uRes] = await Promise.all([
+      const [wRes, aAllRes, uRes, dRes] = await Promise.all([
         client.get('/inpatient?resource=wards'),
         client.get(`/inpatient?resource=admissions&limit=${ADMISSIONS_PER_PAGE}&offset=${admissionsOffset}`),
         client.get('/settings?resource=users'),
+        client.get('/settings?resource=departments'),
       ])
       if (wRes.success) {
         const wardList = wRes.data || []
@@ -161,6 +165,7 @@ export default function InpatientModule() {
         if (aAllRes.meta) setAdmissionsMeta(aAllRes.meta)
       }
       if (uRes.success) setDoctors((uRes.data || []).filter(u => u.role === 'doctor' && u.isActive !== false))
+      if (dRes.success) setDepartments(dRes.data || [])
     } catch (err) {
       setLoadError(err.message || 'Failed to load inpatient data')
       toast.error(err.message || 'Failed to load inpatient data')
@@ -273,10 +278,10 @@ export default function InpatientModule() {
   }
 
   const handleAdmit = async () => {
-    if (!admitForm.patientId || !admitForm.wardId || !admitForm.bedId || !admitForm.admissionDiagnosis) { toast.error('Fill all required fields'); return }
+    if (!admitForm.patientId || !admitForm.wardId || !admitForm.bedId || !admitForm.departmentId || !admitForm.doctorId || !admitForm.admissionDiagnosis) { toast.error('Fill all required fields'); return }
     setSavingAdmission(true)
     try {
-      const res = await client.post('/inpatient', { resource:'admission', ...admitForm, expectedLengthOfStay:parseInt(admitForm.expectedLengthOfStay)||3, depositAmount:parseFloat(admitForm.depositAmount)||0 })
+      const res = await client.post('/inpatient', { resource:'admission', ...admitForm, attendingDoctorId: admitForm.doctorId || undefined, admittingDoctorId: admitForm.doctorId || undefined, expectedLengthOfStay:parseInt(admitForm.expectedLengthOfStay)||3, depositAmount:parseFloat(admitForm.depositAmount)||0 })
       if (res.success) { toast.success('Patient admitted'); setShowAdmitDialog(false); setAdmitForm(emptyAdmission); fetchAll() }
       else toast.error(res.error||'Failed to admit')
     } catch { toast.error('Failed to admit patient') }
@@ -452,7 +457,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
     <div class="field"><div class="field-label">Ward / Bed</div><div class="field-value">${wardName} — Bed ${adm.bed?.bedNumber || '—'}</div></div>
     <div class="field"><div class="field-label">Admission Type</div><div class="field-value">${adm.admissionType || '—'}</div></div>
     <div class="field"><div class="field-label">Length of Stay</div><div class="field-value">${days} days</div></div>
-    <div class="field"><div class="field-label">Attending Doctor</div><div class="field-value">${adm.attendingDoctor || '—'}</div></div>
+    <div class="field"><div class="field-label">Attending Doctor</div><div class="field-value">${drName(adm.attendingDoctorName) || adm.attendingDoctor || '—'}</div></div>
   </div>
 
   <div class="section-title">Diagnosis</div>
@@ -566,6 +571,21 @@ ${chargesRows}
     { value: 'movement', label: 'Movement' },
     { value: 'patient-history', label: 'Patient History' },
   ]
+
+  // Bed map grouped by building → floor (multi-building hospitals)
+  const buildingOptions = [...new Set(wards.map(w => w.building || 'Main Building'))]
+  const bedMapGroups = (() => {
+    const list = buildingFilter === 'all' ? wards : wards.filter(w => (w.building || 'Main Building') === buildingFilter)
+    const groups = {}
+    list.forEach(w => {
+      const b = w.building || 'Main Building'
+      const f = w.floor || 'Ground Floor'
+      groups[b] = groups[b] || {}
+      groups[b][f] = groups[b][f] || []
+      groups[b][f].push(w)
+    })
+    return Object.entries(groups)
+  })()
 
   // STRICT: only patients whose status is exactly 'admitted' (lowercase) appear here
   const currentAdmitted = admissions.filter(a => (a.status || '').toLowerCase() === 'admitted')
@@ -692,7 +712,7 @@ ${chargesRows}
                   <p className="text-sm font-medium text-gray-600 mb-2">Today's Admissions</p>
                   <p className="text-3xl font-bold text-orange-500">{currentAdmitted.length}</p>
                   {currentAdmitted.slice(0, 2).map(a => (
-                    <p key={a.id} className="text-xs text-orange-600 mt-1">{a.patient?.firstName} {a.patient?.lastName} · {a.bed?.ward?.name || '—'}</p>
+                    <p key={a.id} className="text-xs text-orange-600 mt-1">{a.patient?.firstName} {a.patient?.lastName} · {a.bed?.ward?.name || '—'}{a.attendingDoctorName ? ` · ${drName(a.attendingDoctorName)}` : ''}</p>
                   ))}
                 </CardContent>
               </Card>
@@ -735,6 +755,7 @@ ${chargesRows}
                           <span className="font-semibold text-sm">{w.name}</span>
                           <Badge variant="outline" className="text-xs">{w.type}</Badge>
                         </div>
+                        {(w.building || w.floor) && <p className="text-[11px] text-gray-400 mb-1.5 -mt-1">{[w.building, w.floor].filter(Boolean).join(' · ')}</p>}
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between"><span className="text-gray-500">Capacity:</span><span className="font-medium">{w.capacity}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">Occupied:</span><span className="font-medium text-red-500">{occ}</span></div>
@@ -759,6 +780,8 @@ ${chargesRows}
                       <TableRow>
                         <TableHead>Patient</TableHead>
                         <TableHead>Ward/Bed</TableHead>
+                        <TableHead>Doctor</TableHead>
+                        <TableHead>Department</TableHead>
                         <TableHead>Diagnosis</TableHead>
                         <TableHead>Days</TableHead>
                         <TableHead>Status</TableHead>
@@ -766,7 +789,7 @@ ${chargesRows}
                     </TableHeader>
                     <TableBody>
                       {currentAdmitted.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-gray-400">No current admissions</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No current admissions</TableCell></TableRow>
                       ) : currentAdmitted.map(a => (
                         <TableRow key={a.id} className={a.isCritical ? (a.criticalLevel === 'blue' ? 'bg-blue-50' : 'bg-yellow-50') : ''}>
                           <TableCell>
@@ -784,6 +807,8 @@ ${chargesRows}
                             <div className="text-sm">{a.bed?.ward?.name || getWardName(wards, a)}</div>
                             <div className="text-xs text-gray-500">{a.bed?.bedNumber || '—'}</div>
                           </TableCell>
+                          <TableCell className="text-sm">{drName(a.attendingDoctorName) || '—'}</TableCell>
+                          <TableCell className="text-sm">{a.bed?.ward?.department?.name || '—'}</TableCell>
                           <TableCell className="text-sm max-w-[200px] truncate">{a.admissionDiagnosis}</TableCell>
                           <TableCell className="text-sm">{a.admissionDate ? differenceInDays(new Date(), new Date(a.admissionDate)) : 0}</TableCell>
                           <TableCell><Badge className="bg-green-100 text-green-800 text-xs">admitted</Badge></TableCell>
@@ -818,6 +843,8 @@ ${chargesRows}
                       <TableRow>
                         <TableHead>Ward Name</TableHead>
                         <TableHead>Type</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Department</TableHead>
                         <TableHead>Total Beds</TableHead>
                         <TableHead>Occupied</TableHead>
                         <TableHead>Available</TableHead>
@@ -827,7 +854,7 @@ ${chargesRows}
                     </TableHeader>
                     <TableBody>
                       {wards.length === 0 ? (
-                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No wards configured</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">No wards configured</TableCell></TableRow>
                       ) : wards.map(w => {
                         const beds = w.beds || []
                         const occ = beds.filter(b => b.status === 'occupied').length
@@ -839,12 +866,17 @@ ${chargesRows}
                               <div className="text-xs text-gray-500">{w.code}</div>
                             </TableCell>
                             <TableCell><Badge variant="outline" className="text-xs">{w.type}</Badge></TableCell>
+                            <TableCell>
+                              <div className="text-sm">{w.building || '—'}</div>
+                              <div className="text-xs text-gray-500">{w.floor || ''}</div>
+                            </TableCell>
+                            <TableCell className="text-sm">{w.department?.name || '—'}</TableCell>
                             <TableCell className="font-medium">{total}</TableCell>
                             <TableCell className="text-red-500 font-medium">{occ}</TableCell>
                             <TableCell className="text-green-600 font-medium">{total - occ}</TableCell>
                             <TableCell><Badge className="bg-green-100 text-green-800 text-xs">Active</Badge></TableCell>
                             <TableCell>
-                              <Button size="sm" variant="ghost" onClick={() => { setWardForm({ name: w.name, code: w.code, type: w.type, capacity: w.capacity, floor: w.floor || '', chargeNurse: w.chargeNurse || '', phone: w.phone || '' }); setEditingWardId(w.id); setShowWardDialog(true) }}>
+                              <Button size="sm" variant="ghost" onClick={() => { setWardForm({ name: w.name, code: w.code, type: w.type, capacity: w.capacity, building: w.building || '', floor: w.floor || '', departmentId: w.departmentId || '', chargeNurse: w.chargeNurse || '', phone: w.phone || '' }); setEditingWardId(w.id); setShowWardDialog(true) }}>
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </TableCell>
@@ -865,14 +897,32 @@ ${chargesRows}
                   <p className="text-xs text-gray-500">Visual overview of all beds</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
+                  <Select value={buildingFilter} onValueChange={setBuildingFilter}>
+                    <SelectTrigger className="w-44 h-8 text-xs"><SelectValue placeholder="All Buildings" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Buildings</SelectItem>
+                      {buildingOptions.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-green-500 inline-block" />Available</span>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-red-500 inline-block" />Occupied</span>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-yellow-500 inline-block" />Maintenance</span>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-blue-500 inline-block" />Reserved</span>
                 </div>
               </div>
-              <div className="space-y-5">
-                {wards.map(w => {
+              <div className="space-y-6">
+                {bedMapGroups.map(([building, floors]) => (
+                <div key={building} className="rounded-lg border bg-gray-50/40 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Building2 className="h-4 w-4 text-blue-600" />
+                    <span className="font-semibold text-sm">{building}</span>
+                    <Badge variant="outline" className="text-xs">{Object.values(floors).flat().length} ward{Object.values(floors).flat().length !== 1 ? 's' : ''}</Badge>
+                  </div>
+                  {Object.entries(floors).map(([floor, floorWards]) => (
+                  <div key={floor} className="mb-4 last:mb-0">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{floor}</div>
+                    <div className="space-y-5">
+                {floorWards.map(w => {
                   const beds = w.beds || []
                   return (
                     <div key={w.id}>
@@ -880,6 +930,7 @@ ${chargesRows}
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{w.name}</span>
                           <Badge variant="outline" className="text-xs">{w.type}</Badge>
+                          {w.department?.name && <Badge variant="outline" className="text-xs text-blue-600 border-blue-200">{w.department.name}</Badge>}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">{beds.filter(b => b.status === 'occupied').length}/{beds.length} occupied</span>
@@ -957,6 +1008,12 @@ ${chargesRows}
                     </div>
                   )
                 })}
+                    </div>
+                  </div>
+                  ))}
+                </div>
+                ))}
+                {bedMapGroups.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">No wards configured</p>}
               </div>
             </div>
           </div>
@@ -996,6 +1053,7 @@ ${chargesRows}
                       <TableHead>Patient</TableHead>
                       <TableHead>Admission Type</TableHead>
                       <TableHead>Ward/Bed</TableHead>
+                      <TableHead>Doctor / Dept</TableHead>
                       <TableHead>Admitted On</TableHead>
                       <TableHead>Days</TableHead>
                       <TableHead>Diagnosis</TableHead>
@@ -1005,9 +1063,9 @@ ${chargesRows}
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={9} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" /></TableCell></TableRow>
                     ) : admissions.length === 0 ? (
-                      <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">No admissions found</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-400">No admissions found</TableCell></TableRow>
                     ) : admissions.map(a => {
                       const days = a.admissionDate ? differenceInDays(new Date(), new Date(a.admissionDate)) : 0
                       const typeColor = a.admissionType === 'Emergency' ? 'bg-red-100 text-red-700' : a.admissionType === 'Transfer' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'
@@ -1031,6 +1089,10 @@ ${chargesRows}
                             <div className="text-sm">{a.bed?.ward?.name || getWardName(wards, a)}</div>
                             <div className="text-xs text-gray-500">{a.bed?.bedNumber || '—'}</div>
                             {!a.dailyRate && <div className="text-xs text-gray-400">No room rate set</div>}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{drName(a.attendingDoctorName) || '—'}</div>
+                            <div className="text-xs text-gray-500">{a.bed?.ward?.department?.name || '—'}</div>
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">{a.admissionDate ? format(new Date(a.admissionDate), 'dd MMM yyyy') : '—'}</div>
@@ -1137,12 +1199,23 @@ ${chargesRows}
                 <CardContent className="px-5 pb-4 space-y-3">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-xs">Attending Physician *</Label>
-                      <Select value={admitForm.doctorId || ''} onValueChange={v => setAdmitForm(p => ({ ...p, doctorId: v }))}>
-                        <SelectTrigger className="mt-1"><SelectValue placeholder="Select physician" /></SelectTrigger>
-                        <SelectContent>{doctors.map(d => <SelectItem key={d.id} value={d.id}>{d.fullName}</SelectItem>)}</SelectContent>
+                      <Label className="text-xs">Department *</Label>
+                      <Select value={admitForm.departmentId || ''} onValueChange={v => setAdmitForm(p => ({ ...p, departmentId: v, doctorId: '' }))}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+                        <SelectContent>
+                          {departments.filter(dep => doctors.some(d => d.departmentId === dep.id)).map(dep => <SelectItem key={dep.id} value={dep.id}>{dep.name}</SelectItem>)}
+                        </SelectContent>
                       </Select>
                     </div>
+                    <div>
+                      <Label className="text-xs">Attending Physician *</Label>
+                      <Select value={admitForm.doctorId || ''} onValueChange={v => setAdmitForm(p => ({ ...p, doctorId: v }))} disabled={!admitForm.departmentId}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder={admitForm.departmentId ? 'Select physician' : 'Select department first'} /></SelectTrigger>
+                        <SelectContent>{doctors.filter(d => d.departmentId === admitForm.departmentId).map(d => <SelectItem key={d.id} value={d.id}>{d.fullName}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-xs">Expected Length of Stay (Days) *</Label>
                       <Input type="number" min={1} className="mt-1" value={admitForm.expectedLengthOfStay} onChange={e => setAdmitForm(p => ({ ...p, expectedLengthOfStay: e.target.value }))} />
@@ -1166,7 +1239,7 @@ ${chargesRows}
               {/* Financial Information */}
               <Card>
                 <CardHeader className="pb-2 pt-4 px-5">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" />Financial Information</CardTitle>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2"><IndianRupee className="h-4 w-4" />Financial Information</CardTitle>
                 </CardHeader>
                 <CardContent className="px-5 pb-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -1488,7 +1561,7 @@ ${chargesRows}
                               </div>
                               <div>
                                 <div className="text-gray-400 uppercase font-semibold mb-1">Bill</div>
-                                <div className="text-gray-500">—</div>
+                                <div className="font-medium">{a.billGenerated ? `₹${(a.totalBillAmount || 0).toLocaleString()}` : <span className="text-gray-400">Not billed</span>}</div>
                               </div>
                             </div>
                             {a.admissionDiagnosis && (
@@ -1584,6 +1657,17 @@ ${chargesRows}
               </div>
               <div><Label>Bed Capacity *</Label><Input type="number" min={1} className="mt-1" value={wardForm.capacity} onChange={e => setWardForm(p => ({ ...p, capacity: e.target.value }))} /></div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Building / Block</Label><Input className="mt-1" value={wardForm.building} onChange={e => setWardForm(p => ({ ...p, building: e.target.value }))} placeholder="e.g. A Block" /></div>
+              <div><Label>Floor</Label><Input className="mt-1" value={wardForm.floor} onChange={e => setWardForm(p => ({ ...p, floor: e.target.value }))} placeholder="e.g. 3rd Floor" /></div>
+            </div>
+            <div>
+              <Label>Department</Label>
+              <Select value={wardForm.departmentId || ''} onValueChange={v => setWardForm(p => ({ ...p, departmentId: v }))}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Link to a department (optional)" /></SelectTrigger>
+                <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowWardDialog(false)}>Cancel</Button>
@@ -1620,7 +1704,7 @@ ${chargesRows}
             </DialogTitle>
           </DialogHeader>
           <div className="flex border-b mb-4">
-            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: DollarSign }].map(({ id, label, Icon }) => (
+            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: IndianRupee }].map(({ id, label, Icon }) => (
               <button key={id} onClick={() => handleViewTabChange(id)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${viewTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 <Icon className="h-4 w-4" />{label}

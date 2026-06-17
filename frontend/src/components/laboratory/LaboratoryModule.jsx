@@ -11,7 +11,7 @@ import {
   AlertTriangle, CheckCircle, XCircle, Filter, Search, Printer, Send,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Save, AlertCircle, Activity, TestTube,
   X, RefreshCw, Microscope, Beaker, Droplet, ClipboardList, FileBarChart,
-  ArrowUpDown, ArrowUp, ArrowDown, Ban, Play, Pause, CheckSquare, Loader2, Receipt
+  ArrowUpDown, ArrowUp, ArrowDown, Ban, Play, Pause, CheckSquare, Loader2, Receipt, Upload
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
@@ -31,6 +31,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import BulkImportDialog from '@/components/common/BulkImportDialog'
 import { Progress } from '@/components/ui/progress'
 import client from '@/api/client'
 import { drName } from '@/lib/utils'
@@ -271,6 +272,7 @@ export default function LaboratoryModule() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [showTestDialog, setShowTestDialog] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [orderTestSearch, setOrderTestSearch] = useState('')
   // Patient search for New Order dialog
   const [selectedPatient, setSelectedPatient] = useState(null)
@@ -1004,6 +1006,10 @@ tbody tr:hover{background:#f9fafb}
           <Button variant="outline" onClick={() => setShowOrderDialog(true)}>
             <Plus className="mr-2 h-4 w-4" />
             New Order
+          </Button>
+          <Button variant="outline" onClick={() => setShowImport(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Import Excel/CSV
           </Button>
           <Button onClick={() => setShowTestDialog(true)}>
             <Plus className="mr-2 h-4 w-4" />
@@ -2018,6 +2024,22 @@ tbody tr:hover{background:#f9fafb}
           </div>
         </TabsContent>
       </Tabs>
+
+      <BulkImportDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={fetchTests}
+        title="Import Lab Tests from Excel / CSV"
+        description="Upload your pathology test list — each row becomes a test in the catalog. No manual typing per test."
+        endpoint="/laboratory/import"
+        itemNoun="tests"
+        templateFileName="lab-tests-template.xlsx"
+        templateColumns={["Test Name", "Code", "Category", "Test Type", "Sample Type", "Container", "Unit", "Reference Range", "Price", "TAT (hours)", "Department", "Preparation"]}
+        sampleRows={[
+          { "Test Name": "Complete Blood Count (CBC)", Code: "CBC", Category: "hematology", "Test Type": "quantitative", "Sample Type": "blood", Container: "EDTA", Unit: "cells/uL", "Reference Range": "4000-11000", Price: 300, "TAT (hours)": 24, Department: "Pathology", Preparation: "None" },
+          { "Test Name": "Lipid Profile", Code: "LIPID", Category: "biochemistry", "Test Type": "quantitative", "Sample Type": "blood", Container: "Plain", Unit: "mg/dL", "Reference Range": "Varies", Price: 600, "TAT (hours)": 12, Department: "Pathology", Preparation: "12 hr fasting" },
+        ]}
+      />
 
       {/* Add Test Dialog */}
       <Dialog open={showTestDialog} onOpenChange={setShowTestDialog}>

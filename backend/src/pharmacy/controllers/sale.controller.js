@@ -1,6 +1,7 @@
 import { db } from '../../config/db.js'
 import { createSaleSchema } from '../validations/sale.validation.js'
 import { getPagination, paginationMeta, handleServiceError, makeError } from '../utils.js'
+import { recordStockChange, consumeFromBatches } from '../stockService.js'
 
 const SORTABLE_FIELDS = ['saleDate', 'totalAmount', 'paymentStatus', 'createdAt']
 
@@ -109,11 +110,17 @@ export async function create(req, res, next) {
         },
       })
 
-      // Decrement stock for each item
+      // Decrement stock for each item — batches FIFO + ledger row (single source of truth)
       for (const item of parsed.items) {
-        await tx.pharmacyDrug.update({
-          where: { id: item.drugId },
-          data: { quantityInStock: { decrement: item.quantity } },
+        await consumeFromBatches(tx, { drugId: item.drugId, quantity: item.quantity })
+        await recordStockChange(tx, {
+          organizationId: ORGANIZATION_ID,
+          drugId: item.drugId,
+          changeType: 'sale',
+          quantityDelta: -item.quantity,
+          reference: sale.id,
+          note: `Sale ${sale.receiptNumber}`,
+          createdById: req.user?.userId ?? null,
         })
       }
 

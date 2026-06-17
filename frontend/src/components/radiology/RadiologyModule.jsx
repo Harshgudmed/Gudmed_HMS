@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import PatientLookup from '@/components/common/PatientLookup'
+import BulkImportDialog from '@/components/common/BulkImportDialog'
 import client from '@/api/client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,6 +118,7 @@ export default function RadiologyModule() {
 
   // Exam dialog
   const [showExamDialog, setShowExamDialog] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [examForm, setExamForm] = useState(emptyExam)
   const [editingExamId, setEditingExamId] = useState(null)
   const [savingExam, setSavingExam] = useState(false)
@@ -645,6 +647,12 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
           <Button onClick={() => setShowOrderDialog(true)}>
             <Plus className="h-4 w-4 mr-1" />New Order
           </Button>
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload className="h-4 w-4 mr-1" />Import Excel/CSV
+            </Button>
+                        <Button onClick={() => { setEditingExamId(null); setExamForm(emptyExam); setShowExamDialog(true) }}>
+              <Plus className="h-4 w-4 mr-1" />Add test
+            </Button>
         </div>
       </div>
 
@@ -816,7 +824,7 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
               </Select>
             </div>
             <Button onClick={() => { setEditingExamId(null); setExamForm(emptyExam); setShowExamDialog(true) }}>
-              <Plus className="h-4 w-4 mr-1" />Add Exam
+              <Plus className="h-4 w-4 mr-1" />Add Test
             </Button>
           </div>
 
@@ -1366,6 +1374,22 @@ ${order.clinicalIndication ? `<div class="section"><div class="section-header">C
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkImportDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={fetchAll}
+        title="Import Radiology Exams from Excel / CSV"
+        description="Upload your radiology exam list — each row becomes an exam in the catalog. No manual typing per exam."
+        endpoint="/radiology/import"
+        itemNoun="exams"
+        templateFileName="radiology-exams-template.xlsx"
+        templateColumns={["Exam Name", "Code", "Category", "Body Part", "Modality", "Price", "Duration (min)", "Contrast", "Preparation", "Description"]}
+        sampleRows={[
+          { "Exam Name": "Chest X-Ray PA View", Code: "CXR-PA", Category: "x-ray", "Body Part": "chest", Modality: "CR", Price: 400, "Duration (min)": 10, Contrast: "No", Preparation: "Remove metal objects", Description: "Routine chest radiograph" },
+          { "Exam Name": "MRI Brain", Code: "MRI-BR", Category: "mri", "Body Part": "brain", Modality: "MRI", Price: 5000, "Duration (min)": 30, Contrast: "Yes", Preparation: "No metal implants", Description: "Brain MRI with contrast" },
+        ]}
+      />
 
       {/* ── Add/Edit Exam Dialog ── */}
       <Dialog open={showExamDialog} onOpenChange={setShowExamDialog}>

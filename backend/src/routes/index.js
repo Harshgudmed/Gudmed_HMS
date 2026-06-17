@@ -22,6 +22,9 @@ import notificationRoutes from './notificationRoutes.js'
 import paymentRoutes from './paymentRoutes.js'
 import importRoutes from './importRoutes.js'
 import analyticsRoutes from './analyticsRoutes.js'
+import ambulanceRoutes from './ambulanceRoutes.js'
+import dayCareRoutes from './dayCareRoutes.js'
+import insuranceRoutes from './insuranceRoutes.js'
 
 export const router = Router()
 
@@ -67,3 +70,6 @@ router.use('/fee-slabs',             authorize(), feeSlabRoutes)
 router.use('/notifications',         authorize(), notificationRoutes)
 router.use('/payments',              authorize(), paymentRoutes)
 router.use('/analytics',             authorize(), analyticsRoutes)
+router.use('/ambulance',             authorize(), ambulanceRoutes)
+router.use('/day-care',              authorize(), dayCareRoutes)
+router.use('/insurance',             authorize(), insuranceRoutes)

@@ -31,7 +31,7 @@ client.interceptors.response.use(
   (error) => {
     const status  = error.response?.status
     const data    = error.response?.data
-    const message = data?.error || error.message || 'Request failed'
+    const message = data?.error || data?.message || error.message || 'Request failed'
 
     // Session expired / not authenticated: clear the stale token and bounce to the
     // matching role login. Skip the auth probes themselves (so logged-out /auth/me
@@ -50,7 +50,8 @@ client.interceptors.response.use(
 
     const err     = new Error(message)
     err.status    = status
-    err.code      = data?.code
+    err.code      = data?.code || data?.errorCode
+    err.details   = data?.details
     return Promise.reject(err)
   }
 )

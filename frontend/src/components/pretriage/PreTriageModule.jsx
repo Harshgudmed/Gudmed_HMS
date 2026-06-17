@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import client from '@/api/client'
 import PatientLookup, { calculatePatientAge, getPatientFullName } from '@/components/common/PatientLookup'
+import { useDateFilter } from '@/components/common/DateFilter'
 
 // ── Schema ───────────────────────────────────────────────────────────────────
 const screeningSchema = z.object({
@@ -323,6 +324,7 @@ export default function PreTriageModule() {
   const [error,           setError]           = useState(null)
   const [searchQuery,     setSearchQuery]     = useState('')
   const [activeFilter,    setActiveFilter]    = useState('all')
+  const dateFilter = useDateFilter()
   const [currentPage,     setCurrentPage]     = useState(1)
   const ITEMS_PER_PAGE = 10
   const [showFormDialog,  setShowFormDialog]  = useState(false)
@@ -372,7 +374,7 @@ export default function PreTriageModule() {
 
   useEffect(() => { fetchScreenings() }, [])
 
-  useEffect(() => { setCurrentPage(1) }, [searchQuery, activeFilter])
+  useEffect(() => { setCurrentPage(1) }, [searchQuery, activeFilter, dateFilter.key])
 
   const stats = useMemo(() => ({
     total:      screenings.length,
@@ -397,8 +399,9 @@ export default function PreTriageModule() {
         (s.patient?.mrn || '').toLowerCase().includes(lower)
       )
     }
+    list = list.filter(s => dateFilter.matches(s.createdAt))
     return list
-  }, [screenings, activeFilter, searchQuery])
+  }, [screenings, activeFilter, searchQuery, dateFilter.key])
 
   // ── Patient lookup helpers ──────────────────────────────────────────────────
   const fillFromPatient = (patient) => {
@@ -636,6 +639,7 @@ export default function PreTriageModule() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+              {dateFilter.control}
             </div>
           </div>
         </CardHeader>

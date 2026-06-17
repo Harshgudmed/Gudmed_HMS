@@ -1,6 +1,7 @@
 import { db } from '../../config/db.js'
 import { createBatchSchema, updateBatchSchema } from '../validations/batch.validation.js'
 import { getPagination, paginationMeta, handleServiceError, makeError } from '../utils.js'
+import { recordStockChange } from '../stockService.js'
 
 const SORTABLE_FIELDS = ['batchNumber', 'expiryDate', 'quantityRemaining', 'status', 'createdAt']
 
@@ -90,9 +91,15 @@ export async function create(req, res, next) {
         },
       })
 
-      await tx.pharmacyDrug.update({
-        where: { id: parsed.drugId },
-        data: { quantityInStock: { increment: parsed.quantityReceived } },
+      await recordStockChange(tx, {
+        organizationId: ORGANIZATION_ID,
+        drugId: parsed.drugId,
+        batchId: batch.id,
+        changeType: 'purchase',
+        quantityDelta: parsed.quantityReceived,
+        reference: parsed.purchaseOrderNumber || batch.batchNumber,
+        note: `Batch ${batch.batchNumber} received`,
+        createdById: req.user?.userId ?? null,
       })
 
       return batch
@@ -143,9 +150,15 @@ export async function remove(req, res, next) {
         data: { status: 'recalled' },
       })
 
-      await tx.pharmacyDrug.update({
-        where: { id: batch.drugId },
-        data: { quantityInStock: { decrement: batch.quantityRemaining } },
+      await recordStockChange(tx, {
+        organizationId: ORGANIZATION_ID,
+        drugId: batch.drugId,
+        batchId: batch.id,
+        changeType: 'recall',
+        quantityDelta: -batch.quantityRemaining,
+        reference: batch.batchNumber,
+        note: `Batch ${batch.batchNumber} recalled`,
+        createdById: req.user?.userId ?? null,
       })
 
       return { id: req.params.id }

@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import {
   UserPlus, Users, Phone, MapPin, AlertCircle, Shield, Stethoscope,
-  Calendar, Clock, IndianRupee,
+  Calendar, Clock, IndianRupee, FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -32,15 +33,18 @@ const INSURANCE_PROVIDERS = [
 const APPOINTMENT_TYPES = ['OPD', 'Emergency', 'Follow-up', 'Specialist', 'Teleconsultation', 'Procedure']
 const PRIORITY_LEVELS = ['Routine', 'Urgent', 'Emergency', 'Critical']
 
+const MARITAL_STATUSES = ['Single', 'Married', 'Divorced', 'Widowed', 'Other']
+
 const emptyPatientForm = {
   firstName: '', middleName: '', lastName: '', dateOfBirth: '', gender: 'male',
+  maritalStatus: '', referredBy: '', mlcNumber: '',
   phonePrimary: '', phoneSecondary: '', email: '',
   region: '', zone: '', woreda: '', kebele: '', houseNumber: '', postalCode: '',
   emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelationship: '',
   bloodGroup: '', hasInsurance: false, insuranceProvider: '', insuranceId: '',
   // Appointment — booked together with registration
   department: '', doctor: '', consultationFee: '', appointmentType: 'OPD', priority: 'Routine',
-  appointmentDate: '', appointmentTime: '',
+  appointmentDate: '', appointmentTime: '', notes: '',
 }
 
 /**
@@ -117,6 +121,7 @@ export default function RegisterPatientForm({ onSuccess, onCancel }) {
               durationMinutes: 30,
               appointmentType: TYPE_MAP[patientForm.appointmentType] || 'new_patient',
               priority: PRIORITY_MAP[patientForm.priority] || 'normal',
+              ...(patientForm.notes.trim() ? { notes: patientForm.notes.trim() } : {}),
             })
             appointmentBooked = true
           } catch (err) {
@@ -197,6 +202,25 @@ export default function RegisterPatientForm({ onSuccess, onCancel }) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs text-gray-600">Marital Status</Label>
+              <Select value={patientForm.maritalStatus} onValueChange={v => setField('maritalStatus', v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  {MARITAL_STATUSES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-600">Referred By</Label>
+              <Input className="mt-1" value={patientForm.referredBy} onChange={e => setField('referredBy', e.target.value)} placeholder="Doctor / clinic / person" />
+            </div>
+            <div>
+              <Label className="text-xs text-gray-600">MLC Number</Label>
+              <Input className="mt-1" value={patientForm.mlcNumber} onChange={e => setField('mlcNumber', e.target.value)} placeholder="Medico-legal case no. (if any)" />
             </div>
           </div>
         </section>
@@ -386,6 +410,19 @@ export default function RegisterPatientForm({ onSuccess, onCancel }) {
             <Input className="mt-1 bg-gray-100 cursor-not-allowed text-gray-700" type="number" readOnly tabIndex={-1} value={patientForm.consultationFee} placeholder="Set by selected doctor" />
           </div>
         </div>
+
+        {/* Notes */}
+        <section className="rounded-lg border bg-gray-50/60 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <FileText className="h-4 w-4 text-blue-600" />Notes
+          </div>
+          <Textarea
+            rows={3}
+            value={patientForm.notes}
+            onChange={e => setField('notes', e.target.value)}
+            placeholder="Any additional notes (reason for visit, special instructions, referral details...)"
+          />
+        </section>
 
         <div className="flex justify-end gap-3 pt-3 border-t">
           <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>

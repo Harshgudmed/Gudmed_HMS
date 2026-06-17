@@ -5,11 +5,19 @@ import * as saleCtrl         from '../pharmacy/controllers/sale.controller.js'
 import * as prescriptionCtrl from '../pharmacy/controllers/prescription.controller.js'
 import * as purchaseOrderCtrl from '../pharmacy/controllers/purchaseOrder.controller.js'
 import * as statsCtrl        from '../pharmacy/controllers/stats.controller.js'
+import * as importCtrl       from '../pharmacy/controllers/import.controller.js'
 
 const router = Router()
 
+// ── Bulk import ──────────────────────────────────────────────────────────────────
+router.post('/import', importCtrl.importDrugs) // body: { rows:[...], mode:'validate'|'commit' }
+
+// ── Medicine reference (open dataset) name autocomplete ──────────────────────────
+router.get('/medicine-reference', drugCtrl.searchReference)
+
 // ── Drugs ──────────────────────────────────────────────────────────────────────
 router.get('/drugs',      drugCtrl.list)
+router.get('/drugs/lookup', drugCtrl.lookupByBarcode) // must precede /drugs/:id
 router.get('/drugs/:id',  drugCtrl.getById)
 router.post('/drugs',     drugCtrl.create)
 router.patch('/drugs/:id', drugCtrl.update)
@@ -31,6 +39,7 @@ router.post('/sales',    saleCtrl.create)
 router.get('/prescriptions',      prescriptionCtrl.list)
 router.get('/prescriptions/:id',  prescriptionCtrl.getById)
 router.post('/prescriptions',     prescriptionCtrl.create)
+router.post('/prescriptions/:id/dispense', prescriptionCtrl.dispense)
 router.patch('/prescriptions/:id', prescriptionCtrl.update)
 
 // ── Purchase Orders ────────────────────────────────────────────────────────────

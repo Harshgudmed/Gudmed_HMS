@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Navigate, Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Loader2, ShieldCheck, Stethoscope, ConciergeBell, UserCog, ClipboardList } from 'lucide-react'
+import { Loader2, ShieldCheck, Stethoscope, ConciergeBell, UserCog, ClipboardList, HeartPulse, Pill, FlaskConical, Scan, Receipt, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
@@ -10,13 +10,20 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import Logo from '@/components/Logo'
 import { useAuth } from '@/lib/auth'
 import { ROLES, isKnownRole, homePathFor, LOGIN_HERO } from '@/lib/roleConfig'
+import doctorImages from '../../public/login/Doctor.jpeg'
 
 // Icon + accent per role so the login screen is recognisable without reading.
 const ROLE_VISUAL = {
-  admin:        { Icon: ShieldCheck,   color: '#2563eb' },
-  doctor:       { Icon: Stethoscope,   color: '#0891b2' },
-  receptionist: { Icon: ConciergeBell, color: '#9333ea' },
-  patient_crm:  { Icon: ClipboardList, color: '#e11d48' },
+  admin:                { Icon: ShieldCheck,   color: '#2563eb' },
+  doctor:               { Icon: Stethoscope,   color: '#0891b2' },
+  receptionist:         { Icon: ConciergeBell, color: '#9333ea' },
+  patient_crm:          { Icon: ClipboardList, color: '#e11d48' },
+  nurse:                { Icon: HeartPulse,    color: '#0d9488' },
+  pharmacist:           { Icon: Pill,          color: '#7c3aed' },
+  lab_technician:       { Icon: FlaskConical,  color: '#0284c7' },
+  radiology_technician: { Icon: Scan,          color: '#4f46e5' },
+  billing:              { Icon: Receipt,       color: '#d97706' },
+  housekeeping:         { Icon: Sparkles,      color: '#16a34a' },
 }
 
 // Per-role login page mounted at /:role/login. The hospital is resolved from the
@@ -28,9 +35,27 @@ export default function RoleLogin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [imgLoaded, setImgLoaded] = useState(false)
+  const knownRole = isKnownRole(role)
+  const isDoctorLogin = role === 'doctor'
+  const hero = knownRole && LOGIN_HERO[role]
+    ? {
+        ...LOGIN_HERO[role],
+        img: isDoctorLogin ? doctorImages : LOGIN_HERO[role].img,
+      }
+    : null
+
+  // Preload hero image so it's ready before it's needed
+  useEffect(() => {
+    if (!hero?.img) return
+    setImgLoaded(false)
+    const img = new Image()
+    img.src = hero.img
+    img.onload = () => setImgLoaded(true)
+  }, [hero?.img])
 
   // Unknown role in the URL → send home / to the root picker.
-  if (!isKnownRole(role)) {
+  if (!knownRole) {
     return <Navigate to={user ? homePathFor(user.role) : '/'} replace />
   }
 
@@ -42,17 +67,6 @@ export default function RoleLogin() {
   const roleLabel = ROLES[role].label
   const visual = ROLE_VISUAL[role] || { Icon: UserCog, color: '#2563eb' }
   const RoleIcon = visual.Icon
-  const hero = LOGIN_HERO[role]
-  const [imgLoaded, setImgLoaded] = useState(false)
-
-  // Preload hero image so it's ready before it's needed
-  useEffect(() => {
-    if (!hero?.img) return
-    setImgLoaded(false)
-    const img = new Image()
-    img.src = hero.img
-    img.onload = () => setImgLoaded(true)
-  }, [hero?.img])
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -79,18 +93,33 @@ export default function RoleLogin() {
     <div className="min-h-screen flex">
       {hero && (
         <div
-          className="relative hidden lg:flex lg:w-1/2 flex-col justify-end bg-cover bg-center p-12 transition-all duration-700"
+          className="relative hidden overflow-hidden lg:flex lg:w-1/2 flex-col justify-end p-12 transition-all duration-700"
           style={{
-            backgroundColor: '#171717',
-            backgroundImage: imgLoaded
+            backgroundColor: isDoctorLogin ? '#eaf7f8' : '#171717',
+            backgroundImage: imgLoaded && !isDoctorLogin
               ? `linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.15) 45%, rgba(0,0,0,0) 100%), url(${hero.img})`
-              : 'none',
+              : isDoctorLogin
+                ? 'linear-gradient(135deg, #f8fcfc 0%, #d9f0f3 45%, #b9dde6 100%)'
+                : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
             opacity: imgLoaded ? 1 : 0.85,
           }}
-        >
+          >
           {/* Skeleton shimmer while image loads */}
           {!imgLoaded && (
             <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 animate-pulse" />
+          )}
+          {imgLoaded && isDoctorLogin && (
+            <>
+              <img
+                src={hero.img}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover object-[42%_top]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/5 via-transparent to-white/10" />
+              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/65 via-black/28 to-transparent" />
+            </>
           )}
           <div className="relative text-white">
             <h2 className="text-3xl font-bold leading-tight drop-shadow-md">{hero.title}</h2>
@@ -98,7 +127,7 @@ export default function RoleLogin() {
           </div>
         </div>
       )}
-      <div className={`flex w-full items-center justify-center bg-gray-50 px-4 py-10 ${hero ? 'lg:w-1/2' : ''}`}>
+      <div className={`flex w-full items-center justify-center bg-gradient-to-br from-slate-50 via-cyan-50/35 to-blue-50 px-4 py-10 ${hero ? 'lg:w-1/2' : ''}`}>
       <Card className="w-full max-w-sm shadow-lg">
         <CardHeader className="space-y-3 text-center">
           <div className="flex justify-center">

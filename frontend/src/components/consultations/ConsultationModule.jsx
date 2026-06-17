@@ -12,7 +12,7 @@ import {
   Plus, Save, Printer, FileText, Stethoscope, ClipboardList,
   Pill, AlertCircle, User, Loader2, RefreshCw,
   FlaskConical, Scan, Trash2, ArrowLeft, Eye, Edit, Search,
-  ChevronLeft, ChevronRight, X
+  ChevronLeft, ChevronRight, X, CalendarClock
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -176,6 +176,10 @@ export default function ConsultationModule() {
   const [viewingConsultation, setViewingConsultation] = useState(null)
   const [filterSearch, setFilterSearch] = useState('')
   const [filterDoctor, setFilterDoctor] = useState('all')
+  const [filterDate, setFilterDate] = useState('all') // all | today | week | month | specific | custom
+  const [specificDate, setSpecificDate] = useState('')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
 
   const [activeTab, setActiveTab] = useState('vitals')
@@ -245,17 +249,40 @@ export default function ConsultationModule() {
       })
     : patients
 
+  const matchesDateFilter = (visitDate) => {
+    if (filterDate === 'all') return true
+    const d = new Date(visitDate)
+    const now = new Date()
+    if (filterDate === 'today') return d.toDateString() === now.toDateString()
+    if (filterDate === 'week') {
+      const start = new Date(now)
+      const dow = (now.getDay() + 6) % 7 // Monday = 0
+      start.setDate(now.getDate() - dow); start.setHours(0, 0, 0, 0)
+      const end = new Date(start); end.setDate(start.getDate() + 7)
+      return d >= start && d < end
+    }
+    if (filterDate === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+    if (filterDate === 'specific') return !specificDate || d.toDateString() === new Date(specificDate + 'T00:00:00').toDateString()
+    if (filterDate === 'custom') {
+      let ok = true
+      if (customStart) ok = ok && d >= new Date(customStart + 'T00:00:00')
+      if (customEnd) ok = ok && d <= new Date(customEnd + 'T23:59:59')
+      return ok
+    }
+    return true
+  }
+
   const filteredConsultations = consultations.filter(c => {
     const name = c.patient ? getFullName(c.patient).toLowerCase() : ''
     const q = filterSearch.toLowerCase()
     const matchSearch = !filterSearch || name.includes(q) || (c.patient?.mrn || '').toLowerCase().includes(q) || (c.diagnosis || '').toLowerCase().includes(q)
     const matchDoctor = filterDoctor === 'all' || c.doctorId === filterDoctor
-    return matchSearch && matchDoctor
+    return matchSearch && matchDoctor && matchesDateFilter(c.visitDate)
   })
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [filterSearch, filterDoctor])
+  }, [filterSearch, filterDoctor, filterDate, specificDate, customStart, customEnd])
 
   const calcBMI = useCallback(() => {
     const w = vitalsForm.getValues('weight'), h = vitalsForm.getValues('height')
@@ -327,10 +354,11 @@ export default function ConsultationModule() {
     if (c.radiologyOrders && c.radiologyOrders.length > 0) {
       const allRadItems = []
       c.radiologyOrders.forEach(order => {
-        const exam = radiologyExams.find(e => e.id === order.examId)
+        // Prefer the exam included on the order; fall back to the catalog lookup.
+        const exam = order.exam || radiologyExams.find(e => e.id === order.examId)
         if (exam) {
           allRadItems.push({
-            examId: exam.id,
+            examId: exam.id || order.examId,
             examName: exam.examName,
             examCode: exam.examCode || '',
             examCategory: exam.examCategory || '',
@@ -398,8 +426,11 @@ export default function ConsultationModule() {
         referralReason: clinical.referralReason,
         notes: clinical.notes,
         prescriptionItems: prescriptionItems.length > 0 ? prescriptionItems : undefined,
-        labOrderItems: labOrderItems.length > 0 ? labOrderItems : undefined,
-        radiologyOrderItems: radiologyOrderItems.length > 0 ? radiologyOrderItems : undefined,
+        // Backend + validation schema expect `labTests` / `radiologyExams` (not
+        // labOrderItems/radiologyOrderItems) — mismatched keys were silently
+        // stripped by Zod, so lab/radiology orders never got saved.
+        labTests: labOrderItems.length > 0 ? labOrderItems : undefined,
+        radiologyExams: radiologyOrderItems.length > 0 ? radiologyOrderItems : undefined,
         ordersClinicalIndication: ordersClinicalIndication || undefined,
       }
 
@@ -502,8 +533,8 @@ export default function ConsultationModule() {
           ))}
         </div>
 
-        <div className="flex gap-3 items-center">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[220px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input className="pl-9" placeholder="Search by patient name, UHID, diagnosis..." value={filterSearch} onChange={e => setFilterSearch(e.target.value)} />
           </div>
@@ -514,6 +545,32 @@ export default function ConsultationModule() {
               {doctors.map(d => <SelectItem key={d.id} value={d.id}>{d.fullName}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={filterDate} onValueChange={setFilterDate}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Date" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Dates</SelectItem>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="specific">Specific Date</SelectItem>
+              <SelectItem value="custom">Custom Range</SelectItem>
+            </SelectContent>
+          </Select>
+          {filterDate === 'specific' && (
+            <Input type="date" className="w-44" value={specificDate} onChange={e => setSpecificDate(e.target.value)} />
+          )}
+          {filterDate === 'custom' && (
+            <>
+              <Input type="date" className="w-44" value={customStart} max={customEnd || undefined} onChange={e => setCustomStart(e.target.value)} />
+              <span className="text-gray-400 text-sm">to</span>
+              <Input type="date" className="w-44" value={customEnd} min={customStart || undefined} onChange={e => setCustomEnd(e.target.value)} />
+            </>
+          )}
+          {(filterDate !== 'all' || filterDoctor !== 'all' || filterSearch) && (
+            <Button variant="ghost" size="sm" className="text-gray-500" onClick={() => { setFilterDate('all'); setSpecificDate(''); setCustomStart(''); setCustomEnd(''); setFilterDoctor('all'); setFilterSearch('') }}>
+              <X className="h-4 w-4 mr-1" />Clear
+            </Button>
+          )}
         </div>
 
         {loading ? (
@@ -574,19 +631,32 @@ export default function ConsultationModule() {
                                 {c.chiefComplaint && <p className="text-sm"><span className="font-medium text-gray-600">Chief Complaint:</span> {c.chiefComplaint}</p>}
                                 {c.diagnosis && <p className="text-sm"><span className="font-medium text-gray-600">Diagnosis:</span> {c.diagnosis}</p>}
                               </div>
-                              {(c.temperature || c.bloodPressureSystolic || c.pulseRate) && (
-                                <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1">
-                                  {c.temperature && <span><Thermometer className="h-3 w-3 inline mr-0.5" />{c.temperature}°C</span>}
-                                  {c.bloodPressureSystolic && <span><Heart className="h-3 w-3 inline mr-0.5" />{c.bloodPressureSystolic}/{c.bloodPressureDiastolic}</span>}
-                                  {c.pulseRate && <span><Activity className="h-3 w-3 inline mr-0.5" />{c.pulseRate} bpm</span>}
-                                  {c.oxygenSaturation && <span><Droplet className="h-3 w-3 inline mr-0.5" />{c.oxygenSaturation}%</span>}
-                                  {bmiNum && <span>BMI {bmiNum}</span>}
+                              {(c.temperature || c.bloodPressureSystolic || c.pulseRate || c.oxygenSaturation || bmiNum || c.followUpDate) && (
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                                    {c.temperature && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5"><Thermometer className="h-3 w-3" />{c.temperature}°C</span>}
+                                    {c.bloodPressureSystolic && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5"><Heart className="h-3 w-3" />{c.bloodPressureSystolic}/{c.bloodPressureDiastolic}</span>}
+                                    {c.pulseRate && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5"><Activity className="h-3 w-3" />{c.pulseRate} bpm</span>}
+                                    {c.oxygenSaturation && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5"><Droplet className="h-3 w-3" />{c.oxygenSaturation}%</span>}
+                                    {bmiNum && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200 px-2 py-0.5"><Scale className="h-3 w-3" />BMI {bmiNum}</span>}
+                                  </div>
+                                  {c.followUpDate && (() => {
+                                    const fu = new Date(c.followUpDate)
+                                    const today = new Date(); today.setHours(0, 0, 0, 0)
+                                    const upcoming = fu >= today
+                                    return (
+                                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${upcoming ? 'bg-green-50 text-green-700 border-green-300' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                                        <CalendarClock className="h-3.5 w-3.5" />
+                                        {upcoming ? 'Follow-up' : 'Follow-up was'}: {format(fu, 'dd MMM yyyy')}
+                                      </span>
+                                    )
+                                  })()}
                                 </div>
                               )}
                               <div className="mt-2 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs text-gray-500">{drName(docName)}</span>
-                                  {hasPrescription && <Badge variant="secondary" className="text-xs"><Pill className="h-3 w-3 mr-1" />Rx</Badge>}
+                                 
                                 </div>
                                 <div className="flex gap-1">
                                   <Button size="sm" variant="ghost" className="h-8 px-2 text-gray-600" onClick={() => setViewingConsultation(c)}>
@@ -695,6 +765,57 @@ export default function ConsultationModule() {
                   {c.followUpDate && <div className="bg-green-50 border border-green-200 rounded p-2"><p className="text-green-800 font-medium">Follow-up: {format(new Date(c.followUpDate), 'dd MMM yyyy')}</p>{c.followUpInstructions && <p className="text-sm text-green-700">{c.followUpInstructions}</p>}</div>}
                   {c.referredTo && <div className="bg-yellow-50 border border-yellow-200 rounded p-2"><p className="font-medium">Referral: {c.referredTo}</p>{c.referralReason && <p className="text-sm">{c.referralReason}</p>}</div>}
                   {c.notes && <div><p className="font-semibold text-gray-700 uppercase text-xs tracking-wide mb-1">Notes</p><p>{c.notes}</p></div>}
+
+                  {/* Medicines prescribed (from prescriptions[].items JSON) */}
+                  {(() => {
+                    const meds = (c.prescriptions || []).flatMap(rx => { try { return JSON.parse(rx.items || '[]') } catch { return [] } })
+                    if (!meds.length) return null
+                    return (
+                      <div>
+                        <p className="font-semibold text-gray-700 uppercase text-xs tracking-wide mb-1">Medicines Prescribed</p>
+                        <div className="border rounded divide-y">
+                          {meds.map((m, i) => (
+                            <div key={i} className="p-2 flex flex-wrap justify-between gap-2">
+                              <span className="font-medium">{m.drugName || m.name || '—'}{m.strength ? ` ${m.strength}` : ''}</span>
+                              <span className="text-gray-500 text-xs">{[m.dosage, m.frequency, m.duration, m.quantity ? `Qty: ${m.quantity}` : null, m.instructions].filter(Boolean).join(' · ')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Lab tests ordered (from labOrders[].tests JSON) */}
+                  {(() => {
+                    const labs = (c.labOrders || []).flatMap(o => { try { return JSON.parse(o.tests || '[]') } catch { return [] } })
+                    if (!labs.length) return null
+                    return (
+                      <div>
+                        <p className="font-semibold text-gray-700 uppercase text-xs tracking-wide mb-1">Lab Tests Ordered</p>
+                        <div className="flex flex-wrap gap-2">
+                          {labs.map((t, i) => (
+                            <span key={i} className="inline-block bg-purple-50 text-purple-700 border border-purple-200 rounded px-2 py-0.5 text-xs">{t.testName || t.name || t.testCode || '—'}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Radiology exams ordered (from radiologyOrders[].exam) */}
+                  {(() => {
+                    const rads = (c.radiologyOrders || []).map(o => o.exam?.examName || o.examName).filter(Boolean)
+                    if (!rads.length) return null
+                    return (
+                      <div>
+                        <p className="font-semibold text-gray-700 uppercase text-xs tracking-wide mb-1">Radiology Ordered</p>
+                        <div className="flex flex-wrap gap-2">
+                          {rads.map((n, i) => (
+                            <span key={i} className="inline-block bg-cyan-50 text-cyan-700 border border-cyan-200 rounded px-2 py-0.5 text-xs">{n}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })()}

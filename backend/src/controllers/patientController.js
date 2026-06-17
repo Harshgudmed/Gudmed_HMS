@@ -1,13 +1,12 @@
 import { db } from '../config/db.js'
 import { z } from 'zod'
 
-const AUTH_ENFORCED = process.env.AUTH_ENFORCED === 'true'
-
 // Doctors only see their own patients — those they have an appointment or consultation
-// with. Returns a Prisma `where` fragment for the doctor, or null for every other role
-// (and while AUTH_ENFORCED is off, so behaviour is unchanged until we flip the flag).
+// with. Returns a Prisma `where` fragment for the doctor, or null for every other role.
+//
+// Data scoping is INDEPENDENT of AUTH_ENFORCED (the login flag): a logged-in doctor is
+// always scoped to their own patients, even in demo mode. See utils/scope.js.
 function doctorPatientFilter(req) {
-  if (!AUTH_ENFORCED) return null
   if (req.user?.role !== 'doctor') return null
   const doctorId = req.user.userId
   return {
@@ -20,7 +19,6 @@ function doctorPatientFilter(req) {
 
 // Patient CRM users see only patients assigned to them.
 function crmScopeId(req) {
-  if (!AUTH_ENFORCED) return null
   if (req.user?.role !== 'patient_crm') return null
   return req.user.userId
 }
@@ -73,6 +71,8 @@ const patientSchema = z.object({
   insuranceId: z.string().optional(),
   insuranceExpiryDate: z.string().optional(),
   maritalStatus: z.string().optional(),
+  referredBy: z.string().optional(),
+  mlcNumber: z.string().optional(),
   occupation: z.string().optional(),
   isVip: z.boolean().default(false),
   notes: z.string().optional(),
@@ -89,6 +89,14 @@ export async function getAll(req, res, next) {
     const where = { organizationId }
     if (status === 'active') where.isActive = true
     else if (status === 'inactive') where.isActive = false
+
+    // Registration-date range filter (Today / This Week / This Month / custom).
+    const { startDate, endDate } = req.query
+    if (startDate || endDate) {
+      where.createdAt = {}
+      if (startDate) where.createdAt.gte = new Date(`${startDate}T00:00:00`)
+      if (endDate) where.createdAt.lte = new Date(`${endDate}T23:59:59.999`)
+    }
 
     if (search) {
       where.OR = [
@@ -116,9 +124,9 @@ export async function getAll(req, res, next) {
     ])
 
     // Flag which patients have a generated report (lab order with results,
-    // radiology order with a report) so the list can show clickable icons.
+    // radiology order with a report, or uploaded documents) so the list can show clickable icons.
     const ids = patients.map((p) => p.id)
-    const [labGroups, radGroups, admGroups] = ids.length
+    const [labGroups, radGroups, admGroups, docGroups] = ids.length
       ? await Promise.all([
           db.labOrder.groupBy({
             by: ['patientId'],
@@ -130,23 +138,29 @@ export async function getAll(req, res, next) {
             where: { patientId: { in: ids }, report: { isNot: null } },
             _count: { _all: true },
           }),
-          // Currently-admitted (IPD) patients only
           db.admission.groupBy({
             by: ['patientId'],
             where: { patientId: { in: ids }, status: 'admitted' },
             _count: { _all: true },
           }),
+          db.patientDocument.groupBy({
+            by: ['patientId'],
+            where: { patientId: { in: ids } },
+            _count: { _all: true },
+          }),
         ])
-      : [[], [], []]
+      : [[], [], [], []]
 
     const labCount = Object.fromEntries(labGroups.map((g) => [g.patientId, g._count._all]))
     const radCount = Object.fromEntries(radGroups.map((g) => [g.patientId, g._count._all]))
     const admCount = Object.fromEntries(admGroups.map((g) => [g.patientId, g._count._all]))
+    const docCount = Object.fromEntries(docGroups.map((g) => [g.patientId, g._count._all]))
     const data = patients.map((p) => ({
       ...p,
       labReportCount: labCount[p.id] || 0,
       radiologyReportCount: radCount[p.id] || 0,
       admittedCount: admCount[p.id] || 0,
+      documentCount: docCount[p.id] || 0,
     }))
 
     res.json({ success: true, data, meta: { total, limit, offset, hasMore: offset + limit < total } })
@@ -189,7 +203,7 @@ export async function getRecords(req, res, next) {
       return res.status(404).json({ success: false, error: 'Patient not found' })
     }
 
-    const [labOrders, radiologyOrders, admissions, appointments, invoices] = await Promise.all([
+    const [labOrders, radiologyOrders, admissions, appointments, invoices, patientDocuments] = await Promise.all([
       db.labOrder.findMany({
         where: { patientId: id },
         include: { results: { include: { test: true } } },
@@ -216,6 +230,10 @@ export async function getRecords(req, res, next) {
         where: { patientId: id },
         orderBy: { invoiceDate: 'desc' },
       }),
+      db.patientDocument.findMany({
+        where: { patientId: id },
+        orderBy: { uploadedAt: 'desc' },
+      }),
     ])
 
     // Attach department names (Appointment stores departmentId but has no relation)
@@ -235,7 +253,7 @@ export async function getRecords(req, res, next) {
     res.json({
       success: true,
       data: {
-        labOrders, radiologyOrders, admissions, appointments, invoices,
+        labOrders, radiologyOrders, admissions, appointments, invoices, patientDocuments,
         billing: { totalBilled, totalPaid, balanceDue, invoiceCount: billable.length },
       },
     })
@@ -279,6 +297,8 @@ export async function create(req, res, next) {
         insuranceId: validatedData.insuranceId,
         insuranceExpiryDate: validatedData.insuranceExpiryDate ? new Date(validatedData.insuranceExpiryDate) : null,
         maritalStatus: validatedData.maritalStatus,
+        referredBy: validatedData.referredBy,
+        mlcNumber: validatedData.mlcNumber,
         occupation: validatedData.occupation,
         isVip: validatedData.isVip,
         notes: validatedData.notes,

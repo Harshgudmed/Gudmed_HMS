@@ -78,6 +78,7 @@ model Organization {
   doctorCommissionConfigs  DoctorCommissionConfig[]
   doctorCommissions        DoctorCommission[]
   pharmacyPurchaseOrders   PharmacyPurchaseOrder[]
+  vendors                  Vendor[]
   machineIntegrations MachineIntegration[]
   machineResultsQueue MachineResultsQueue[]
 
@@ -85,6 +86,31 @@ model Organization {
   eaptsConfig             EaptsConfig?
   eaptsMedicationMappings EaptsMedicationMapping[]
   eaptsTransactions       EaptsTransaction[]
+  patientDocuments        PatientDocument[]
+
+  // Enterprise IPD Relations
+  bedCategories  BedCategory[]
+  tariffPlans    TariffPlan[]
+  tariffRules    TariffRule[]
+  chargeMasters  ChargeMaster[]
+  patientTariffs PatientTariff[]
+  bedOccupancies BedOccupancy[]
+  ipdCharges     IpdCharge[]
+  vitalsRecords  VitalsRecord[]
+  clinicalNotesV2 ClinicalNote[]
+  medicationAdministrations MedicationAdministration[]
+  dischargeClearances DischargeClearance[]
+  housekeepingTasks   HousekeepingTask[]
+  bills               Bill[]
+  billCounters        BillCounter[]
+  billPayments        BillPayment[]
+  clinicalOrders      ClinicalOrder[]
+
+  // Ambulance / Day Care / Insurance modules
+  ambulanceTrips      AmbulanceTrip[]
+  dayCareCases        DayCareCase[]
+  insuranceCases      InsuranceCase[]
+  insuranceClaims     InsuranceClaim[]
 }
 
 /// User (Staff)
@@ -168,6 +194,9 @@ model User {
   // Patient CRM: patients this user manages
   crmPatients            Patient[]               @relation("CrmAssignedPatients")
 
+  // Day Care cases where this user is the treating doctor
+  dayCareCases           DayCareCase[]           @relation("DayCareDoctor")
+
   @@index([organizationId])
   @@index([role])
   @@index([isActive])
@@ -222,12 +251,13 @@ model Patient {
   email          String?
 
   // Address (Ethiopian format)
-  region      String?
-  zone        String?
-  woreda      String?
-  kebele      String?
-  houseNumber String?
-  postalCode  String? // PIN code
+  region             String?
+  zone               String?
+  woreda             String?
+  kebele             String?
+  houseNumber        String?
+  postalCode         String? // PIN code
+  addressDescription String? // legacy free-text address — kept so existing data isn't dropped
 
   // Emergency Contact
   emergencyContactName         String?
@@ -249,6 +279,8 @@ model Patient {
   // Additional
   photoUrl       String?
   maritalStatus  String?
+  referredBy     String? // who referred the patient (doctor, clinic, person)
+  mlcNumber      String? // Medico-Legal Case number (police case / accident registrations)
   occupation     String?
   educationLevel String?
 
@@ -279,11 +311,37 @@ model Patient {
   admissions          Admission[]
   deathCertificates   DeathCertificate[]
   machineResultsQueue MachineResultsQueue[]
+  patientDocuments    PatientDocument[]
+
+  // Ambulance / Day Care / Insurance modules
+  ambulanceTrips      AmbulanceTrip[]
+  dayCareCases        DayCareCase[]
+  insuranceCases      InsuranceCase[]
 
   @@index([organizationId])
   @@index([mrn])
   @@index([lastName, firstName])
   @@index([phonePrimary])
+}
+
+/// Patient Document (KYC & Records)
+model PatientDocument {
+  id             String   @id @default(cuid())
+  organizationId String
+  patientId      String
+
+  documentType   String   // aadhaar, pan, insurance, referral, lab_report, prescription, history, other
+  title          String?
+  fileUrl        String
+  fileType       String?  // mime type
+  uploadedAt     DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
 }
 
 /// Pre-Triage (Ethiopian workflow - screening before main triage)
@@ -603,6 +661,7 @@ model Ward {
   code           String?
   type           String? // general, icu, nicu, pediatric, maternity
   capacity       Int      @default(0)
+  building       String? // multi-building hospitals (e.g. "A Block", "Main Building")
   floor          String?
   chargeNurse    String?
   phone          String?
@@ -622,16 +681,20 @@ model Bed {
   id               String   @id @default(cuid())
   organizationId   String
   wardId           String
+  bedCategoryId    String? // pricing tier (General, Private, ICU…) — drives the tariff engine
   bedNumber        String
   type             String? // standard, icu, special
-  status           String   @default("available") // available, occupied, maintenance
+  status           String   @default("available") // available, occupied, maintenance, reserved, dirty, cleaning
   currentPatientId String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  ward         Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ward         Ward               @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  bedCategory  BedCategory?       @relation(fields: [bedCategoryId], references: [id])
   admissions   Admission[]
+  occupancies  BedOccupancy[]
+  housekeepingTasks HousekeepingTask[]
 
   @@index([organizationId])
   @@index([wardId])
@@ -659,7 +722,11 @@ model Admission {
   attendingDoctorId    String?
 
   // Status
-  status String @default("admitted") // admitted, discharged, transferred
+  status String @default("admitted") // admitted, discharged, transferred (kept for backward compat)
+
+  // Enterprise state machine (Phase 3) — richer lifecycle alongside `status`
+  admissionState String? // REQUESTED|BED_RESERVED|ADMITTED|IN_TREATMENT|DISCHARGE_INITIATED|CLEARANCES_PENDING|BILL_FINALIZED|DISCHARGED|LAMA|ABSCONDED|EXPIRED|TRANSFERRED_OUT
+  dischargeType  String? // NORMAL|LAMA|ABSCONDED|EXPIRED|TRANSFER_OUT
 
   // Discharge
   dischargeDate          DateTime?
@@ -692,6 +759,18 @@ model Admission {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   patient      Patient      @relation(fields: [patientId], references: [id])
   bed          Bed?         @relation(fields: [bedId], references: [id])
+
+  // Enterprise IPD children (FK-enforced; cascade on admission delete)
+  occupancies               BedOccupancy[]
+  ipdCharges                IpdCharge[]
+  vitalsRecords             VitalsRecord[]
+  clinicalNotesV2           ClinicalNote[]
+  medicationAdministrations MedicationAdministration[]
+  dischargeClearances       DischargeClearance[]
+  patientTariff             PatientTariff?
+  bills                     Bill[]
+  billPayments              BillPayment[]
+  clinicalOrders            ClinicalOrder[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -797,6 +876,14 @@ model PharmacyDrug {
   costPrice        Float?
   sellingPrice     Float?
   markupPercentage Float?
+  purchasePrice    Float? // explicit purchase price (costPrice kept for back-compat)
+  mrp              Float? // printed maximum retail price
+  gstRate          Float? // GST percentage
+  hsnCode          String?
+
+  // Identification
+  barcode      String? // EAN-13 / UPC / Code128 / QR payload scanned at the counter
+  manufacturer String? // distinct from the free-text supplierName below
 
   // Storage
   storageLocation      String?
@@ -818,12 +905,17 @@ model PharmacyDrug {
 
   organization  Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batches       PharmacyBatch[]
+  stockLedger   StockLedger[]
   eaptsMappings EaptsMedicationMapping[]
 
+  // Barcode uniqueness is enforced in the controller (see drug.controller.create/update),
+  // not via a DB unique constraint — a unique constraint makes `prisma db push` demand
+  // --accept-data-loss, which would break the Render deploy pipeline.
   @@index([organizationId])
   @@index([drugName])
   @@index([drugCategory])
   @@index([quantityInStock])
+  @@index([barcode])
 }
 
 /// Pharmacy Batch (Batch/Lot Tracking)
@@ -850,6 +942,7 @@ model PharmacyBatch {
   // Supplier
   supplierName    String?
   supplierInvoice String?
+  vendorId        String? // optional link to Vendor; free-text supplier fields kept for back-compat
 
   // Status
   status String @default("active") // active, expired, recalled, depleted
@@ -857,11 +950,13 @@ model PharmacyBatch {
   createdAt   DateTime @default(now())
   createdById String?
 
-  drug PharmacyDrug @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  drug   PharmacyDrug @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  vendor Vendor?      @relation(fields: [vendorId], references: [id])
 
   @@index([drugId])
   @@index([expiryDate])
   @@index([status])
+  @@index([vendorId])
 }
 
 /// Prescription
@@ -964,6 +1059,7 @@ model PharmacyPurchaseOrder {
   supplierName    String
   supplierContact String?
   supplierEmail   String?
+  vendorId        String? // optional link to Vendor; free-text supplier fields kept for back-compat
 
   // Dates
   orderDate            DateTime  @default(now())
@@ -981,10 +1077,79 @@ model PharmacyPurchaseOrder {
   updatedAt   DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor       Vendor?      @relation(fields: [vendorId], references: [id])
 
   @@index([organizationId])
   @@index([status])
   @@index([orderDate])
+  @@index([vendorId])
+}
+
+/// Stock Ledger — append-only record of every inventory movement (audit + FIFO source of truth)
+model StockLedger {
+  id             String @id @default(cuid())
+  organizationId String
+
+  drugId  String
+  batchId String?
+
+  // purchase | sale | dispense | return | adjustment | recall | import
+  changeType   String
+  quantityDelta Int    // signed: positive = stock in, negative = stock out
+  balanceAfter  Int    // drug.quantityInStock after this movement
+
+  reference String? // sale/prescription/PO id or invoice no.
+  note      String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  drug PharmacyDrug @relation(fields: [drugId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([drugId])
+  @@index([createdAt])
+}
+
+/// Vendor / Supplier master
+model Vendor {
+  id             String @id @default(cuid())
+  organizationId String
+
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  gstNumber     String?
+  address       String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches        PharmacyBatch[]
+  purchaseOrders PharmacyPurchaseOrder[]
+
+  @@index([organizationId])
+}
+
+/// Reference catalog of Indian medicines (open dataset, ~215k rows) used for
+/// name autocomplete when adding a medicine. Global/shared (no organizationId).
+/// Populated by scripts/seed-medicine-reference.mjs. Not part of live inventory.
+model MedicineReference {
+  id             String  @id @default(cuid())
+  name           String
+  nameLower      String  // lowercased for case-insensitive prefix search
+  price          Float?
+  manufacturer   String?
+  type           String?
+  packSize       String?
+  composition    String? // combined salt composition (genericName source)
+  isDiscontinued Boolean @default(false)
+
+  @@index([nameLower])
+  @@index([name])
 }
 
 // ============================================
@@ -1950,4 +2115,600 @@ model EaptsTransaction {
   @@index([transactionType])
   @@index([status])
   @@index([transactionDate])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ENTERPRISE IPD — Tariff engine, occupancy ledger, structured charges
+// Additive to the existing Ward/Bed/Admission models. See IPD_ENTERPRISE_BLUEPRINT.md
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Bed pricing tier (General, Semi-Private, Private, Deluxe, Suite, ICU, HDU, NICU, PICU, Isolation, Burns, VIP)
+model BedCategory {
+  id                String   @id @default(cuid())
+  organizationId    String
+  name              String
+  code              String
+  rank              Int      @default(0) // ordering / escalation level
+  defaultBedDayRate Float? // fallback bed/day rate if no tariff rule matches
+  isCritical        Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  beds         Bed[]
+  occupancies  BedOccupancy[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+/// A named rate card for a payer (Cash 2026, Star Health TPA, CGHS, Corporate…)
+model TariffPlan {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  payerType      String // CASH | INSURANCE | TPA | CORPORATE | GOVT | EMPLOYEE
+  validFrom      DateTime  @default(now())
+  validTo        DateTime?
+  isDefault      Boolean   @default(false)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rules        TariffRule[]
+
+  @@index([organizationId])
+}
+
+/// Single source of truth for every billable item (bed-day, nursing, doctor visit, procedure, lab, etc.)
+model ChargeMaster {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  serviceGroup   String // BED | NURSING | DOCTOR_VISIT | PROCEDURE | LAB | RADIOLOGY | PHARMACY | CONSUMABLE | OTHER
+  uom            String? // per-day, per-unit, per-test
+  basePrice      Float
+  taxRatePct     Float    @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipdCharges   IpdCharge[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, serviceGroup])
+}
+
+/// Configurable adjustment — NO hardcoded percentages. Most-specific rule wins.
+model TariffRule {
+  id             String    @id @default(cuid())
+  organizationId String
+  planId         String
+  bedCategoryId  String? // null = any category
+  serviceGroup   String? // null = any group
+  serviceItemId  String? // null = whole group; set = item-specific (wins)
+  adjustmentType String // PERCENT | FIXED_DELTA | ABSOLUTE_OVERRIDE
+  adjustmentValue Float
+  validFrom      DateTime  @default(now())
+  validTo        DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         TariffPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, planId, bedCategoryId, serviceGroup])
+}
+
+/// The tariff plan locked to one admission (snapshot — protects against mid-stay catalog changes)
+model PatientTariff {
+  id                String   @id @default(cuid())
+  organizationId    String
+  admissionId       String   @unique
+  planId            String
+  payerType         String
+  corporateId       String?
+  insurancePolicyId String?
+  lockedAt          DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+}
+
+/// Occupancy-segment ledger — each (admission, bed, category) stay window. Replaces single-bed billing.
+model BedOccupancy {
+  id             String    @id @default(cuid())
+  organizationId String
+  admissionId    String
+  bedId          String
+  bedCategoryId  String? // snapshot the category at time of occupancy
+  startAt        DateTime  @default(now())
+  endAt          DateTime? // null = current segment
+  reason         String? // ADMIT | TRANSFER | ESCALATION | DE_ESCALATION
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+  bed          Bed          @relation(fields: [bedId], references: [id])
+  bedCategory  BedCategory? @relation(fields: [bedCategoryId], references: [id])
+
+  @@index([organizationId, admissionId])
+  @@index([bedId, startAt])
+}
+
+/// IPD charge line — structured row (replaces JSON charge blobs). Idempotent per source.
+model IpdCharge {
+  id             String   @id @default(cuid())
+  organizationId String
+  admissionId    String
+  chargeItemId   String? // FK ChargeMaster (null for ad-hoc)
+  description    String
+  serviceGroup   String
+  unitPrice      Float
+  quantity       Float    @default(1)
+  resolvedFrom   Json? // {planId, bedCategoryId, ruleId} for audit
+  serviceDate    DateTime @default(now())
+  sourceModule   String? // LAB | RADIOLOGY | PHARMACY | IPD | PROCEDURE
+  sourceRef      String? // id in that module (idempotency)
+  createdAt      DateTime @default(now())
+
+  // ── Phase 1 billing: snapshot integrity (frozen at post time) ──
+  taxPct         Float   @default(0)
+  taxAmount      Float   @default(0)
+  discountPct    Float   @default(0)
+  discountAmount Float   @default(0)
+  lineTotal      Float   @default(0) // frozen: unitPrice*qty - discountAmount + taxAmount
+  // ── traceability ──
+  postedById     String?
+  postedByName   String?
+  // ── lifecycle (audit-safe cancellation; no hard delete) ──
+  status         String    @default("ACTIVE") // ACTIVE | CANCELLED | RETURNED
+  cancelReason   String?
+  cancelledById  String?
+  cancelledAt    DateTime?
+  // ── bill linkage ──
+  billId         String?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission     @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+  chargeItem   ChargeMaster? @relation(fields: [chargeItemId], references: [id])
+  bill         Bill?         @relation(fields: [billId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, sourceModule, sourceRef])
+  @@index([organizationId, admissionId])
+  @@index([billId])
+}
+
+/// Phase 1 IPD bill (one-to-many per admission: interim / final / supplementary).
+/// Charges are frozen line items (IpdCharge); a FINAL bill is immutable.
+model Bill {
+  id             String    @id @default(cuid())
+  organizationId String
+  admissionId    String // NOT unique — many bills per admission
+  billNumber     String? // assigned only at finalize
+  status         String    @default("DRAFT") // DRAFT | FINAL | CANCELLED
+  billType       String    @default("FINAL") // INTERIM | FINAL | SUPPLEMENTARY
+  payerType      String    @default("CASH") // CASH | INSURANCE | TPA | CORPORATE | GOVT | EMPLOYEE
+
+  bedTotal      Float @default(0)
+  serviceTotal  Float @default(0)
+  subtotal      Float @default(0)
+  taxTotal      Float @default(0)
+  discountTotal Float @default(0)
+  depositTotal  Float @default(0)
+  payableTotal  Float @default(0)
+
+  // Phase 2: payment rollup (ledger = source of truth; these are a cache)
+  paidTotal     Float  @default(0)
+  balanceDue    Float  @default(0)
+  paymentStatus String @default("UNPAID") // UNPAID | PARTIAL | PAID | REFUNDED
+
+  cancelReason String?
+  finalizedAt  DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission     @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+  charges      IpdCharge[]
+  payments     BillPayment[]
+
+  @@unique([organizationId, billNumber])
+  @@index([organizationId, status])
+  @@index([admissionId])
+}
+
+/// Phase 2: IPD payment ledger — signed, immutable, numbered receipts.
+/// ADVANCE/PAYMENT = +amount, REFUND = −amount. Cancelling a bill detaches
+/// (billId=null) its payments; they re-link to the replacement on bill-generate.
+model BillPayment {
+  id             String   @id @default(cuid())
+  organizationId String
+  billId         String?
+  admissionId    String
+  receiptNumber  String? // RCP-<FY>-NNNNNN, on SUCCESS only
+  type           String   @default("PAYMENT") // ADVANCE | PAYMENT | REFUND
+  amount         Float // + advance/payment, − refund
+  method         String // CASH | UPI | CARD | BANK_TRANSFER | CHEQUE
+  reference      String? // UTR / txn / cheque no / 'legacy-deposit'
+  status         String   @default("SUCCESS") // SUCCESS | VOID
+  voidReason     String?
+  note           String?
+  creditNoteId   String? // future (Phase 3)
+  idempotencyKey String?
+  receivedById   String?
+  receivedByName String?
+  paidAt         DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bill         Bill?        @relation(fields: [billId], references: [id], onDelete: SetNull)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, receiptNumber])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, billId])
+  @@index([organizationId, paidAt])
+  @@index([admissionId])
+}
+
+/// Per-organization, per-financial-year bill number sequence (atomic increment).
+model BillCounter {
+  id             String @id @default(cuid())
+  organizationId String
+  series         String // "IPD"
+  year           String // financial year e.g. "2026-27"
+  value          Int    @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, series, year])
+}
+
+// ── Phase 2: Nursing Station — vitals, structured notes, eMAR ─────────────────
+
+/// Time-series vitals with NEWS2 early-warning score
+model VitalsRecord {
+  id              String   @id @default(cuid())
+  organizationId  String
+  admissionId     String
+  recordedAt      DateTime @default(now())
+  systolicBp      Int?
+  diastolicBp     Int?
+  heartRate       Int?
+  respiratoryRate Int?
+  spo2            Float?
+  tempC           Float?
+  painScore       Int? // 0-10
+  consciousness   String? // ALERT | CONFUSION | VOICE | PAIN | UNRESPONSIVE (AVPU)
+  gcs             Int?
+  intakeMl        Int?
+  outputMl        Int?
+  bloodSugar      Float?
+  newsScore       Int? // computed
+  newsRisk        String? // LOW | MEDIUM | HIGH
+  recordedById    String?
+  recordedByName  String?
+  notes           String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, admissionId, recordedAt])
+}
+
+/// Append-only clinical/nursing notes (replaces JSON blob on Admission)
+model ClinicalNote {
+  id             String   @id @default(cuid())
+  organizationId String
+  admissionId    String
+  noteType       String // PROGRESS | NURSING | CONSULTANT | PROCEDURE | TRANSFER | DISCHARGE | DOCTOR | OBSERVATION
+  body           String
+  authorId       String?
+  authorName     String?
+  authoredAt     DateTime @default(now())
+  parentId       String? // addendum chain — corrections never overwrite
+  vitals         Json? // optional snapshot
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, admissionId, authoredAt])
+}
+
+/// eMAR — bedside medication administration (links loosely to JSON-item Prescription)
+model MedicationAdministration {
+  id             String    @id @default(cuid())
+  organizationId String
+  admissionId    String
+  prescriptionId String? // Prescription stores items as JSON, so this is a soft link
+  drugName       String
+  dosage         String?
+  route          String?
+  scheduledAt    DateTime?
+  administeredAt DateTime?
+  status         String // GIVEN | MISSED | HELD | REFUSED | DUE
+  reason         String?
+  nurseId        String?
+  nurseName      String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, admissionId, scheduledAt])
+}
+
+// ── Phase 3: Discharge clearances, bed turnover ───────────────────────────────
+
+/// Multi-disciplinary discharge clearance gate (one row per department per admission)
+model DischargeClearance {
+  id             String    @id @default(cuid())
+  organizationId String
+  admissionId    String
+  type           String // DOCTOR | NURSING | PHARMACY | BILLING | HOUSEKEEPING
+  status         String    @default("PENDING") // PENDING | CLEARED | BLOCKED
+  clearedById    String?
+  clearedByName  String?
+  clearedAt      DateTime?
+  remark         String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission    @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+
+  @@unique([admissionId, type])
+  @@index([organizationId, admissionId])
+}
+
+/// Bed turnover / housekeeping task (drives OCCUPIED → DIRTY → CLEANING → AVAILABLE)
+model HousekeepingTask {
+  id             String    @id @default(cuid())
+  organizationId String
+  bedId          String
+  admissionId    String?
+  type           String    @default("CLEANING") // CLEANING | FUMIGATION | INSPECTION
+  status         String    @default("OPEN") // OPEN | IN_PROGRESS | DONE
+  assignedToName String?
+  notes          String?
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bed          Bed          @relation(fields: [bedId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([bedId])
+}
+
+// ── Phase 3A: Clinical Orders (CPOE) spine ────────────────────────────────────
+// SPINE ONLY in 3A: doctors place type-bound orders that move through a canonical
+// lifecycle with full audit. NO executor dispatch and NO auto-billing in 3A —
+// executorModel/executorId/billed/ipdChargeId are reserved for 3B+ (Procedure→
+// Lab→Radiology→Pharmacy). Billing stays manual via post-charge.
+
+/// CPOE order spine — one billable clinical intent per admission.
+model ClinicalOrder {
+  id             String @id @default(cuid())
+  organizationId String
+  admissionId    String
+  patientId      String
+
+  orderType    String // LAB | RADIOLOGY | PHARMACY | PROCEDURE
+  catalogModel String? // LabTest | RadiologyExam | PharmacyDrug | ChargeMaster
+  catalogItemId String?
+  itemName     String // snapshot (survives catalog edits)
+  itemCode     String?
+  serviceGroup String // LAB | RADIOLOGY | PHARMACY | PROCEDURE
+
+  priority           String  @default("ROUTINE") // ROUTINE | URGENT | STAT
+  quantity           Float   @default(1)
+  frequency          String?
+  dosage             String?
+  route              String?
+  duration           String?
+  clinicalIndication String?
+  notes              String?
+
+  status       String  @default("ORDERED") // ORDERED|ACKNOWLEDGED|IN_PROGRESS|COMPLETED|CANCELLED
+  domainStatus String? // reserved (3B+)
+
+  orderedById      String?
+  orderedByName    String?
+  orderedAt        DateTime  @default(now())
+  acknowledgedById String?
+  acknowledgedByName String?
+  acknowledgedAt   DateTime?
+  startedById      String?
+  startedByName    String?
+  startedAt        DateTime?
+  completedById    String?
+  completedByName  String?
+  completedAt      DateTime?
+  cancelledById    String?
+  cancelledByName  String?
+  cancelledAt      DateTime?
+  cancelReason     String?
+
+  executorModel String? // reserved (3B+)
+  executorId    String? // reserved (3B+)
+  billed        Boolean @default(false) // reserved (3B+)
+  ipdChargeId   String? // reserved (3B+)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission            @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+  events       ClinicalOrderEvent[]
+
+  @@index([organizationId, admissionId, status])
+  @@index([organizationId, orderType, status])
+  @@index([admissionId])
+}
+
+/// Append-only lifecycle timeline for an order (UI timeline; complements AuditLog).
+model ClinicalOrderEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  orderId        String
+  fromStatus     String?
+  toStatus       String
+  actorId        String?
+  actorName      String?
+  actorRole      String?
+  remark         String?
+  at             DateTime @default(now())
+
+  order ClinicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, at])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// AMBULANCE — trip logging & billing (pragmatic; not the full EMS/dispatch tier)
+// ════════════════════════════════════════════════════════════════════════════
+
+/// A single ambulance trip with its billing line.
+model AmbulanceTrip {
+  id             String @id @default(cuid())
+  organizationId String
+  patientId      String?
+
+  tripNumber    String // per-org sequential, e.g. AM0001
+  ambulanceType String  @default("BLS") // BLS | ALS | ICU | NEONATAL | PTV | MORTUARY
+  fromLocation  String?
+  toLocation    String? @default("Hospital")
+  distanceKm    Float?
+  charge        Float   @default(0)
+
+  status  String   @default("completed") // scheduled | enroute | completed | cancelled
+  tripDate DateTime @default(now())
+
+  driverName    String?
+  vehicleNumber String?
+  contactPhone  String?
+  notes         String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient?     @relation(fields: [patientId], references: [id])
+
+  @@unique([organizationId, tripNumber])
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([tripDate])
+  @@index([status])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DAY CARE — short-stay procedures (admit + discharge same day, no bed-night)
+// ════════════════════════════════════════════════════════════════════════════
+
+model DayCareCase {
+  id             String @id @default(cuid())
+  organizationId String
+  patientId      String
+
+  caseNumber String // per-org sequential, e.g. DC0001
+  doctorId   String?
+  doctorName String? // snapshot for display even if user record changes
+  procedure  String?
+
+  admissionDate DateTime @default(now())
+  dischargeTime String? // HH:mm — same-day discharge
+
+  fee           Float  @default(0)
+  paymentStatus String @default("pending") // pending | paid | partial
+  amountPaid    Float  @default(0)
+
+  status String  @default("admitted") // admitted | in_procedure | observation | discharged | cancelled
+  notes  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  doctor       User?        @relation("DayCareDoctor", fields: [doctorId], references: [id])
+
+  @@unique([organizationId, caseNumber])
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([admissionDate])
+  @@index([status])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TPA / INSURANCE — payer policies per patient + claim tracking
+// ════════════════════════════════════════════════════════════════════════════
+
+/// One insurance/TPA policy attached to a patient. `amountUsed`/balance derive
+/// from approved+settled claims (computed on read), so the ledger stays truthful.
+model InsuranceCase {
+  id             String @id @default(cuid())
+  organizationId String
+  patientId      String
+
+  payerType   String  @default("INSURANCE") // INSURANCE | TPA
+  insurerName String // e.g. Star Health, HDFC Ergo
+  tpaName     String? // third-party administrator, if any
+
+  policyNumber  String?
+  coverageLimit Float   @default(0)
+
+  status    String    @default("Active") // Active | Expired | Inactive
+  validFrom DateTime?
+  validTo   DateTime?
+  notes     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient          @relation(fields: [patientId], references: [id])
+  claims       InsuranceClaim[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([payerType])
+}
+
+model InsuranceClaim {
+  id             String @id @default(cuid())
+  organizationId String
+  caseId         String
+
+  claimNumber    String // per-org sequential, e.g. CLM0001
+  claimAmount    Float   @default(0)
+  approvedAmount Float?
+
+  status    String  @default("pending") // pending | submitted | approved | rejected | settled
+  diagnosis String?
+  remarks   String?
+
+  submittedAt DateTime?
+  settledAt   DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case         InsuranceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, claimNumber])
+  @@index([organizationId])
+  @@index([caseId])
+  @@index([status])
 }

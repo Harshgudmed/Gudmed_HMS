@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, differenceInDays } from 'date-fns'
 import { getOrgSettings } from '@/lib/orgSettings'
+import { drName } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
   BedDouble, Plus, Edit, Trash2, Search, Eye, RefreshCw, ArrowRight, LogOut,
-  AlertCircle, Printer, FileText, ClipboardList, DollarSign, BarChart2,
+  AlertCircle, Printer, FileText, ClipboardList, IndianRupee, BarChart2,
   Loader2, Activity, Stethoscope, UserPlus, Building2, User, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,6 +23,10 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import client from '@/api/client'
 import PatientLookup from '@/components/common/PatientLookup'
+import NursingStation from '@/components/inpatient/NursingStation'
+import NotesAndOrders from '@/components/inpatient/NotesAndOrders'
+import BillScreen from '@/components/inpatient/BillScreen'
+import CollectionsReport from '@/components/inpatient/CollectionsReport'
 
 function admissionLabel(a) {
   if (!a?.id) return '—'
@@ -51,12 +56,11 @@ function printViaIframe(html) {
   }, 300)
 }
 
-const WARD_TYPES = ['General','Private','Semi-Private','ICU','NICU','Pediatric','Maternity','Emergency','Isolation']
-const BED_TYPES = ['Standard','ICU','Isolation','Bariatric']
+const WARD_TYPES = ['General','Private','Semi-Private','ICU','NICU','PICU','CCU','HDU','Burn Unit','OT / Operation Theatre','Recovery / Post-Op','Dialysis','Pediatric','Maternity','Emergency','Isolation']
+const BED_TYPES = ['Standard','ICU','Ventilator','Burn Care','OT Table','Isolation','Bariatric']
 const ADMISSION_TYPES = ['Emergency','Elective','Transfer']
 const DISCHARGE_CONDITIONS = ['Improved','Recovered','Unchanged','Worsened','Deceased','Transferred']
 const NOTE_TYPES = ['Nursing','Doctor','Progress','Procedure','Observation']
-const CHARGE_TYPES = ['Consultation','Procedure','Medication','Lab Test','Radiology','Other']
 
 function bedStatusBadge(status) {
   const map = { available:'bg-green-100 text-green-800', occupied:'bg-red-100 text-red-800', maintenance:'bg-yellow-100 text-yellow-800', reserved:'bg-blue-100 text-blue-800' }
@@ -68,16 +72,16 @@ function admissionStatusBadge(status) {
   return <Badge className={map[status]||'bg-gray-100 text-gray-800'}>{status}</Badge>
 }
 
-const emptyWard = { name:'', code:'', type:'General', capacity:10, floor:'', chargeNurse:'', phone:'' }
-const emptyAdmission = { patientId:'', wardId:'', bedId:'', admissionType:'Emergency', admissionDiagnosis:'', chiefComplaint:'', expectedLengthOfStay:3, depositAmount:0, admissionNotes:'', isCritical:false, criticalLevel:'none' }
+const emptyWard = { name:'', code:'', type:'General', capacity:10, building:'', floor:'', departmentId:'', chargeNurse:'', phone:'' }
+const emptyAdmission = { patientId:'', wardId:'', bedId:'', departmentId:'', doctorId:'', admissionType:'Emergency', admissionDiagnosis:'', chiefComplaint:'', expectedLengthOfStay:3, depositAmount:0, admissionNotes:'', isCritical:false, criticalLevel:'none' }
 const emptyDischarge = { dischargeDiagnosis:'', treatmentSummary:'', medicationsOnDischarge:'', followUpInstructions:'', dischargeCondition:'Improved', followUpDate:'', dischargeNotes:'' }
 const emptyNote = { type:'Nursing', text:'', bp:'', temp:'', pulse:'', spo2:'', weight:'' }
-const emptyCharge = { name:'', type:'Other', amount:'', quantity:1 }
 const emptyAddBed = { wardId:'', bedNumber:'', type:'Standard' }
 
 export default function InpatientModule() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [doctors, setDoctors] = useState([])
+  const [departments, setDepartments] = useState([])
   const [wards, setWards] = useState([])
   const [admissions, setAdmissions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -91,6 +95,7 @@ export default function InpatientModule() {
 
   const [showWardDialog, setShowWardDialog] = useState(false)
   const [wardForm, setWardForm] = useState(emptyWard)
+  const [buildingFilter, setBuildingFilter] = useState('all')
   const [editingWardId, setEditingWardId] = useState(null)
   const [savingWard, setSavingWard] = useState(false)
 
@@ -118,12 +123,6 @@ export default function InpatientModule() {
   const [noteForm, setNoteForm] = useState(emptyNote)
   const [savingNote, setSavingNote] = useState(false)
 
-  const [ipdBilling, setIpdBilling] = useState(null)
-  const [loadingBilling, setLoadingBilling] = useState(false)
-  const [billingDailyRate, setBillingDailyRate] = useState('')
-  const [showAddChargeDialog, setShowAddChargeDialog] = useState(false)
-  const [chargeForm, setChargeForm] = useState(emptyCharge)
-  const [savingCharge, setSavingCharge] = useState(false)
 
   const [showAddBedDialog, setShowAddBedDialog] = useState(false)
   const [addBedForm, setAddBedForm] = useState(emptyAddBed)
@@ -144,10 +143,11 @@ export default function InpatientModule() {
       const admissionsOffset = (patientHistoryPage - 1) * ADMISSIONS_PER_PAGE
       // Fetch all admissions (admitted + discharged) so history tab works
       // AND separately fetch only admitted to guarantee Discharge/Dashboard tabs stay clean
-      const [wRes, aAllRes, uRes] = await Promise.all([
+      const [wRes, aAllRes, uRes, dRes] = await Promise.all([
         client.get('/inpatient?resource=wards'),
         client.get(`/inpatient?resource=admissions&limit=${ADMISSIONS_PER_PAGE}&offset=${admissionsOffset}`),
         client.get('/settings?resource=users'),
+        client.get('/settings?resource=departments'),
       ])
       if (wRes.success) {
         const wardList = wRes.data || []
@@ -161,6 +161,7 @@ export default function InpatientModule() {
         if (aAllRes.meta) setAdmissionsMeta(aAllRes.meta)
       }
       if (uRes.success) setDoctors((uRes.data || []).filter(u => u.role === 'doctor' && u.isActive !== false))
+      if (dRes.success) setDepartments(dRes.data || [])
     } catch (err) {
       setLoadError(err.message || 'Failed to load inpatient data')
       toast.error(err.message || 'Failed to load inpatient data')
@@ -208,21 +209,10 @@ export default function InpatientModule() {
     finally { setLoadingNotes(false) }
   }
 
-  const fetchIpdBilling = async (admissionId) => {
-    setLoadingBilling(true)
-    try {
-      const res = await client.get('/inpatient', { params: { resource: 'billing', admissionId } })
-      if (res.success) setIpdBilling(res.data || null)
-    } catch { setIpdBilling(null) }
-    finally { setLoadingBilling(false) }
-  }
-
   const openViewAdmission = (a) => {
     setViewAdmission(a)
     setViewTab('details')
     setClinicalNotes([])
-    setIpdBilling(null)
-    setBillingDailyRate('')
     setNoteForm(emptyNote)
     setShowViewAdmission(true)
   }
@@ -231,7 +221,7 @@ export default function InpatientModule() {
     setViewTab(tab)
     if (!viewAdmission) return
     if (tab === 'notes') fetchClinicalNotes(viewAdmission.id)
-    if (tab === 'billing') fetchIpdBilling(viewAdmission.id)
+    // billing tab loads its own data via <BillScreen>
   }
 
   const syncWardBeds = async (ward) => {
@@ -273,10 +263,10 @@ export default function InpatientModule() {
   }
 
   const handleAdmit = async () => {
-    if (!admitForm.patientId || !admitForm.wardId || !admitForm.bedId || !admitForm.admissionDiagnosis) { toast.error('Fill all required fields'); return }
+    if (!admitForm.patientId || !admitForm.wardId || !admitForm.bedId || !admitForm.departmentId || !admitForm.doctorId || !admitForm.admissionDiagnosis) { toast.error('Fill all required fields'); return }
     setSavingAdmission(true)
     try {
-      const res = await client.post('/inpatient', { resource:'admission', ...admitForm, expectedLengthOfStay:parseInt(admitForm.expectedLengthOfStay)||3, depositAmount:parseFloat(admitForm.depositAmount)||0 })
+      const res = await client.post('/inpatient', { resource:'admission', ...admitForm, attendingDoctorId: admitForm.doctorId || undefined, admittingDoctorId: admitForm.doctorId || undefined, expectedLengthOfStay:parseInt(admitForm.expectedLengthOfStay)||3, depositAmount:parseFloat(admitForm.depositAmount)||0 })
       if (res.success) { toast.success('Patient admitted'); setShowAdmitDialog(false); setAdmitForm(emptyAdmission); fetchAll() }
       else toast.error(res.error||'Failed to admit')
     } catch { toast.error('Failed to admit patient') }
@@ -288,10 +278,26 @@ export default function InpatientModule() {
     if (!selectedAdmission) return
     setSavingDischarge(true)
     try {
-      const res = await client.patch('/inpatient', { resource: 'discharge', id: selectedAdmission.id, ...dischargeForm })
-      if (res.success) { toast.success('Patient discharged'); setShowDischargeDialog(false); setDischargeForm(emptyDischarge); setSelectedAdmission(null); fetchAll() }
-      else toast.error(res.error||'Failed')
-    } catch { toast.error('Failed to discharge patient') }
+      // Clearance-gated finalize (Phase 3): server returns 409 if any dept not cleared.
+      const res = await client.post('/inpatient', { resource: 'discharge-finalize', admissionId: selectedAdmission.id, dischargeType: 'NORMAL', ...dischargeForm })
+      if (res.success) { toast.success('Patient discharged · bed freed'); setShowDischargeDialog(false); setDischargeForm(emptyDischarge); setSelectedAdmission(null); fetchAll() }
+      else toast.error(res.error || 'Failed')
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to discharge patient'
+      toast.error(msg)
+    }
+    setSavingDischarge(false)
+  }
+
+  // LAMA / Absconded / Expired — bypasses the billing gate
+  const handleMarkExit = async (dischargeType) => {
+    if (!selectedAdmission) return
+    setSavingDischarge(true)
+    try {
+      const res = await client.post('/inpatient', { resource: 'mark-exit', admissionId: selectedAdmission.id, dischargeType, reason: dischargeForm.dischargeNotes })
+      if (res.success) { toast.success(`Marked ${dischargeType}`); setShowDischargeDialog(false); setDischargeForm(emptyDischarge); setSelectedAdmission(null); fetchAll() }
+      else toast.error(res.error || 'Failed')
+    } catch { toast.error(`Failed to mark ${dischargeType}`) }
     setSavingDischarge(false)
   }
 
@@ -320,27 +326,6 @@ export default function InpatientModule() {
       else toast.error(res.error || 'Failed to add note')
     } catch { toast.error('Failed to add note') }
     setSavingNote(false)
-  }
-
-  const handleGenerateBill = async () => {
-    if (!billingDailyRate) { toast.error('Enter daily room rate'); return }
-    try {
-      const res = await client.post('/inpatient', { resource: 'billing', admissionId: viewAdmission.id, dailyRate: parseFloat(billingDailyRate) || 0 })
-      if (res.success) { toast.success('Bill generated'); fetchIpdBilling(viewAdmission.id) }
-      else toast.error(res.error || 'Failed to generate bill')
-    } catch { toast.error('Failed to generate bill') }
-  }
-
-  const handleAddCharge = async () => {
-    if (!chargeForm.name || !chargeForm.amount) { toast.error('Name and amount required'); return }
-    if (!ipdBilling?.id) { toast.error('Generate a bill first'); return }
-    setSavingCharge(true)
-    try {
-      const res = await client.post('/inpatient', { resource: 'charge', billingId: ipdBilling.id, name: chargeForm.name, type: chargeForm.type, amount: parseFloat(chargeForm.amount) || 0, quantity: parseInt(chargeForm.quantity) || 1 })
-      if (res.success) { toast.success('Charge added'); setChargeForm(emptyCharge); setShowAddChargeDialog(false); fetchIpdBilling(viewAdmission.id) }
-      else toast.error(res.error || 'Failed to add charge')
-    } catch { toast.error('Failed to add charge') }
-    setSavingCharge(false)
   }
 
   const handleAddBed = async () => {
@@ -452,7 +437,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
     <div class="field"><div class="field-label">Ward / Bed</div><div class="field-value">${wardName} — Bed ${adm.bed?.bedNumber || '—'}</div></div>
     <div class="field"><div class="field-label">Admission Type</div><div class="field-value">${adm.admissionType || '—'}</div></div>
     <div class="field"><div class="field-label">Length of Stay</div><div class="field-value">${days} days</div></div>
-    <div class="field"><div class="field-label">Attending Doctor</div><div class="field-value">${adm.attendingDoctor || '—'}</div></div>
+    <div class="field"><div class="field-label">Attending Doctor</div><div class="field-value">${drName(adm.attendingDoctorName) || adm.attendingDoctor || '—'}</div></div>
   </div>
 
   <div class="section-title">Diagnosis</div>
@@ -498,45 +483,6 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
     win.document.close()
   }
 
-  const handlePrintFinalBill = (adm) => {
-    if (!ipdBilling) { toast.error('No billing record found. Generate a bill first.'); return }
-    const wardName = getWardName(wards, adm)
-    const admDate = adm.admissionDate ? format(new Date(adm.admissionDate), 'dd MMM yyyy') : '—'
-    const disDate = adm.dischargeDate ? format(new Date(adm.dischargeDate), 'dd MMM yyyy') : format(new Date(), 'dd MMM yyyy')
-    const days = adm.admissionDate ? differenceInDays(adm.dischargeDate ? new Date(adm.dischargeDate) : new Date(), new Date(adm.admissionDate)) : 0
-    const roomCharge = (ipdBilling.dailyRate || 0) * days
-    const extraCharges = (ipdBilling.charges || []).reduce((s, c) => s + ((c.amount || 0) * (c.quantity || 1)), 0)
-    const total = roomCharge + extraCharges
-    const chargesRows = (ipdBilling.charges || []).map(c =>
-      `<tr><td>${c.name}</td><td>${c.type||''}</td><td>${c.quantity||1}</td><td>₹${(c.amount||0).toLocaleString()}</td><td>₹${((c.amount||0)*(c.quantity||1)).toLocaleString()}</td></tr>`
-    ).join('')
-    printViaIframe(`<!DOCTYPE html><html><head><title>IPD Final Bill</title>
-<style>body{font-family:Arial,sans-serif;font-size:13px;padding:24px;color:#222}h2{text-align:center;margin-bottom:4px;font-size:18px}.sub{text-align:center;color:#666;font-size:11px;margin-bottom:16px}h3{font-size:13px;margin:14px 0 4px;border-bottom:1px solid #ddd;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:8px}th,td{padding:6px 8px;border:1px solid #ddd;text-align:left}th{background:#f5f5f5;font-weight:600}.total{font-weight:bold;background:#e8f5e9}.footer{text-align:center;font-size:10px;color:#aaa;margin-top:20px}@media print{body{padding:10px}}</style>
-</head><body>
-<h2>IPD Final Bill</h2>
-<div class="sub">${orgInfo.name} &nbsp;·&nbsp; Generated ${format(new Date(),'dd MMM yyyy, hh:mm a')}</div>
-<h3>Patient Details</h3>
-<table>
-<tr><td width="38%" style="background:#f5f5f5;font-weight:600">Patient Name</td><td>${adm.patient?.firstName||''} ${adm.patient?.lastName||''}</td></tr>
-<tr><td style="background:#f5f5f5;font-weight:600">UHID</td><td>${adm.patient?.mrn||'—'}</td></tr>
-<tr><td style="background:#f5f5f5;font-weight:600">Admission #</td><td>${admissionLabel(adm)}</td></tr>
-<tr><td style="background:#f5f5f5;font-weight:600">Ward / Bed</td><td>${wardName} · Bed ${adm.bed?.bedNumber||'—'}</td></tr>
-<tr><td style="background:#f5f5f5;font-weight:600">Period</td><td>${admDate} → ${disDate} (${days} days)</td></tr>
-<tr><td style="background:#f5f5f5;font-weight:600">Deposit Paid</td><td>₹${(adm.depositAmount||0).toLocaleString()}</td></tr>
-</table>
-<h3>Billing Details</h3>
-<table>
-<tr><th>Item</th><th>Type</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>
-<tr><td>Room Charges (${days} days × ₹${(ipdBilling.dailyRate||0).toLocaleString()}/day)</td><td>Room</td><td>${days}</td><td>₹${(ipdBilling.dailyRate||0).toLocaleString()}</td><td>₹${roomCharge.toLocaleString()}</td></tr>
-${chargesRows}
-<tr class="total"><td colspan="4" style="text-align:right">Total</td><td>₹${total.toLocaleString()}</td></tr>
-<tr><td colspan="4" style="text-align:right">Deposit Paid</td><td>₹${(adm.depositAmount||0).toLocaleString()}</td></tr>
-<tr class="total"><td colspan="4" style="text-align:right">Net Payable</td><td>₹${Math.max(0,total-(adm.depositAmount||0)).toLocaleString()}</td></tr>
-</table>
-<div class="footer">This is a computer-generated bill.</div>
-</body></html>`)
-  }
-
   const filteredAdmissions = admissions.filter(a => {
     const q = searchQuery.toLowerCase()
     const name = `${a.patient?.firstName||''} ${a.patient?.lastName||''}`.toLowerCase()
@@ -562,10 +508,28 @@ ${chargesRows}
     { value: 'wards-beds', label: 'Wards & Beds' },
     { value: 'admissions', label: 'Admissions' },
     { value: 'new-admission', label: 'New Admission' },
+    { value: 'nursing', label: 'Nursing Station' },
+    { value: 'notes-orders', label: 'Doctor Notes & Orders' },
     { value: 'discharge', label: 'Discharge' },
     { value: 'movement', label: 'Movement' },
     { value: 'patient-history', label: 'Patient History' },
+    { value: 'collections', label: 'Collections' },
   ]
+
+  // Bed map grouped by building → floor (multi-building hospitals)
+  const buildingOptions = [...new Set(wards.map(w => w.building || 'Main Building'))]
+  const bedMapGroups = (() => {
+    const list = buildingFilter === 'all' ? wards : wards.filter(w => (w.building || 'Main Building') === buildingFilter)
+    const groups = {}
+    list.forEach(w => {
+      const b = w.building || 'Main Building'
+      const f = w.floor || 'Ground Floor'
+      groups[b] = groups[b] || {}
+      groups[b][f] = groups[b][f] || []
+      groups[b][f].push(w)
+    })
+    return Object.entries(groups)
+  })()
 
   // STRICT: only patients whose status is exactly 'admitted' (lowercase) appear here
   const currentAdmitted = admissions.filter(a => (a.status || '').toLowerCase() === 'admitted')
@@ -692,7 +656,7 @@ ${chargesRows}
                   <p className="text-sm font-medium text-gray-600 mb-2">Today's Admissions</p>
                   <p className="text-3xl font-bold text-orange-500">{currentAdmitted.length}</p>
                   {currentAdmitted.slice(0, 2).map(a => (
-                    <p key={a.id} className="text-xs text-orange-600 mt-1">{a.patient?.firstName} {a.patient?.lastName} · {a.bed?.ward?.name || '—'}</p>
+                    <p key={a.id} className="text-xs text-orange-600 mt-1">{a.patient?.firstName} {a.patient?.lastName} · {a.bed?.ward?.name || '—'}{a.attendingDoctorName ? ` · ${drName(a.attendingDoctorName)}` : ''}</p>
                   ))}
                 </CardContent>
               </Card>
@@ -735,6 +699,7 @@ ${chargesRows}
                           <span className="font-semibold text-sm">{w.name}</span>
                           <Badge variant="outline" className="text-xs">{w.type}</Badge>
                         </div>
+                        {(w.building || w.floor) && <p className="text-[11px] text-gray-400 mb-1.5 -mt-1">{[w.building, w.floor].filter(Boolean).join(' · ')}</p>}
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between"><span className="text-gray-500">Capacity:</span><span className="font-medium">{w.capacity}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">Occupied:</span><span className="font-medium text-red-500">{occ}</span></div>
@@ -759,6 +724,8 @@ ${chargesRows}
                       <TableRow>
                         <TableHead>Patient</TableHead>
                         <TableHead>Ward/Bed</TableHead>
+                        <TableHead>Doctor</TableHead>
+                        <TableHead>Department</TableHead>
                         <TableHead>Diagnosis</TableHead>
                         <TableHead>Days</TableHead>
                         <TableHead>Status</TableHead>
@@ -766,7 +733,7 @@ ${chargesRows}
                     </TableHeader>
                     <TableBody>
                       {currentAdmitted.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-gray-400">No current admissions</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No current admissions</TableCell></TableRow>
                       ) : currentAdmitted.map(a => (
                         <TableRow key={a.id} className={a.isCritical ? (a.criticalLevel === 'blue' ? 'bg-blue-50' : 'bg-yellow-50') : ''}>
                           <TableCell>
@@ -784,6 +751,8 @@ ${chargesRows}
                             <div className="text-sm">{a.bed?.ward?.name || getWardName(wards, a)}</div>
                             <div className="text-xs text-gray-500">{a.bed?.bedNumber || '—'}</div>
                           </TableCell>
+                          <TableCell className="text-sm">{drName(a.attendingDoctorName) || '—'}</TableCell>
+                          <TableCell className="text-sm">{a.bed?.ward?.department?.name || '—'}</TableCell>
                           <TableCell className="text-sm max-w-[200px] truncate">{a.admissionDiagnosis}</TableCell>
                           <TableCell className="text-sm">{a.admissionDate ? differenceInDays(new Date(), new Date(a.admissionDate)) : 0}</TableCell>
                           <TableCell><Badge className="bg-green-100 text-green-800 text-xs">admitted</Badge></TableCell>
@@ -818,6 +787,8 @@ ${chargesRows}
                       <TableRow>
                         <TableHead>Ward Name</TableHead>
                         <TableHead>Type</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Department</TableHead>
                         <TableHead>Total Beds</TableHead>
                         <TableHead>Occupied</TableHead>
                         <TableHead>Available</TableHead>
@@ -827,7 +798,7 @@ ${chargesRows}
                     </TableHeader>
                     <TableBody>
                       {wards.length === 0 ? (
-                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No wards configured</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">No wards configured</TableCell></TableRow>
                       ) : wards.map(w => {
                         const beds = w.beds || []
                         const occ = beds.filter(b => b.status === 'occupied').length
@@ -839,12 +810,17 @@ ${chargesRows}
                               <div className="text-xs text-gray-500">{w.code}</div>
                             </TableCell>
                             <TableCell><Badge variant="outline" className="text-xs">{w.type}</Badge></TableCell>
+                            <TableCell>
+                              <div className="text-sm">{w.building || '—'}</div>
+                              <div className="text-xs text-gray-500">{w.floor || ''}</div>
+                            </TableCell>
+                            <TableCell className="text-sm">{w.department?.name || '—'}</TableCell>
                             <TableCell className="font-medium">{total}</TableCell>
                             <TableCell className="text-red-500 font-medium">{occ}</TableCell>
                             <TableCell className="text-green-600 font-medium">{total - occ}</TableCell>
                             <TableCell><Badge className="bg-green-100 text-green-800 text-xs">Active</Badge></TableCell>
                             <TableCell>
-                              <Button size="sm" variant="ghost" onClick={() => { setWardForm({ name: w.name, code: w.code, type: w.type, capacity: w.capacity, floor: w.floor || '', chargeNurse: w.chargeNurse || '', phone: w.phone || '' }); setEditingWardId(w.id); setShowWardDialog(true) }}>
+                              <Button size="sm" variant="ghost" onClick={() => { setWardForm({ name: w.name, code: w.code, type: w.type, capacity: w.capacity, building: w.building || '', floor: w.floor || '', departmentId: w.departmentId || '', chargeNurse: w.chargeNurse || '', phone: w.phone || '' }); setEditingWardId(w.id); setShowWardDialog(true) }}>
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </TableCell>
@@ -865,14 +841,32 @@ ${chargesRows}
                   <p className="text-xs text-gray-500">Visual overview of all beds</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
+                  <Select value={buildingFilter} onValueChange={setBuildingFilter}>
+                    <SelectTrigger className="w-44 h-8 text-xs"><SelectValue placeholder="All Buildings" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Buildings</SelectItem>
+                      {buildingOptions.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-green-500 inline-block" />Available</span>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-red-500 inline-block" />Occupied</span>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-yellow-500 inline-block" />Maintenance</span>
                   <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-blue-500 inline-block" />Reserved</span>
                 </div>
               </div>
-              <div className="space-y-5">
-                {wards.map(w => {
+              <div className="space-y-6">
+                {bedMapGroups.map(([building, floors]) => (
+                <div key={building} className="rounded-lg border bg-gray-50/40 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Building2 className="h-4 w-4 text-blue-600" />
+                    <span className="font-semibold text-sm">{building}</span>
+                    <Badge variant="outline" className="text-xs">{Object.values(floors).flat().length} ward{Object.values(floors).flat().length !== 1 ? 's' : ''}</Badge>
+                  </div>
+                  {Object.entries(floors).map(([floor, floorWards]) => (
+                  <div key={floor} className="mb-4 last:mb-0">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{floor}</div>
+                    <div className="space-y-5">
+                {floorWards.map(w => {
                   const beds = w.beds || []
                   return (
                     <div key={w.id}>
@@ -880,6 +874,7 @@ ${chargesRows}
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{w.name}</span>
                           <Badge variant="outline" className="text-xs">{w.type}</Badge>
+                          {w.department?.name && <Badge variant="outline" className="text-xs text-blue-600 border-blue-200">{w.department.name}</Badge>}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">{beds.filter(b => b.status === 'occupied').length}/{beds.length} occupied</span>
@@ -957,6 +952,12 @@ ${chargesRows}
                     </div>
                   )
                 })}
+                    </div>
+                  </div>
+                  ))}
+                </div>
+                ))}
+                {bedMapGroups.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">No wards configured</p>}
               </div>
             </div>
           </div>
@@ -996,6 +997,7 @@ ${chargesRows}
                       <TableHead>Patient</TableHead>
                       <TableHead>Admission Type</TableHead>
                       <TableHead>Ward/Bed</TableHead>
+                      <TableHead>Doctor / Dept</TableHead>
                       <TableHead>Admitted On</TableHead>
                       <TableHead>Days</TableHead>
                       <TableHead>Diagnosis</TableHead>
@@ -1005,9 +1007,9 @@ ${chargesRows}
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={9} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" /></TableCell></TableRow>
                     ) : admissions.length === 0 ? (
-                      <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">No admissions found</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-400">No admissions found</TableCell></TableRow>
                     ) : admissions.map(a => {
                       const days = a.admissionDate ? differenceInDays(new Date(), new Date(a.admissionDate)) : 0
                       const typeColor = a.admissionType === 'Emergency' ? 'bg-red-100 text-red-700' : a.admissionType === 'Transfer' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'
@@ -1030,7 +1032,10 @@ ${chargesRows}
                           <TableCell>
                             <div className="text-sm">{a.bed?.ward?.name || getWardName(wards, a)}</div>
                             <div className="text-xs text-gray-500">{a.bed?.bedNumber || '—'}</div>
-                            {!a.dailyRate && <div className="text-xs text-gray-400">No room rate set</div>}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{drName(a.attendingDoctorName) || '—'}</div>
+                            <div className="text-xs text-gray-500">{a.bed?.ward?.department?.name || '—'}</div>
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">{a.admissionDate ? format(new Date(a.admissionDate), 'dd MMM yyyy') : '—'}</div>
@@ -1137,12 +1142,23 @@ ${chargesRows}
                 <CardContent className="px-5 pb-4 space-y-3">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-xs">Attending Physician *</Label>
-                      <Select value={admitForm.doctorId || ''} onValueChange={v => setAdmitForm(p => ({ ...p, doctorId: v }))}>
-                        <SelectTrigger className="mt-1"><SelectValue placeholder="Select physician" /></SelectTrigger>
-                        <SelectContent>{doctors.map(d => <SelectItem key={d.id} value={d.id}>{d.fullName}</SelectItem>)}</SelectContent>
+                      <Label className="text-xs">Department *</Label>
+                      <Select value={admitForm.departmentId || ''} onValueChange={v => setAdmitForm(p => ({ ...p, departmentId: v, doctorId: '' }))}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+                        <SelectContent>
+                          {departments.filter(dep => doctors.some(d => d.departmentId === dep.id)).map(dep => <SelectItem key={dep.id} value={dep.id}>{dep.name}</SelectItem>)}
+                        </SelectContent>
                       </Select>
                     </div>
+                    <div>
+                      <Label className="text-xs">Attending Physician *</Label>
+                      <Select value={admitForm.doctorId || ''} onValueChange={v => setAdmitForm(p => ({ ...p, doctorId: v }))} disabled={!admitForm.departmentId}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder={admitForm.departmentId ? 'Select physician' : 'Select department first'} /></SelectTrigger>
+                        <SelectContent>{doctors.filter(d => d.departmentId === admitForm.departmentId).map(d => <SelectItem key={d.id} value={d.id}>{d.fullName}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-xs">Expected Length of Stay (Days) *</Label>
                       <Input type="number" min={1} className="mt-1" value={admitForm.expectedLengthOfStay} onChange={e => setAdmitForm(p => ({ ...p, expectedLengthOfStay: e.target.value }))} />
@@ -1166,7 +1182,7 @@ ${chargesRows}
               {/* Financial Information */}
               <Card>
                 <CardHeader className="pb-2 pt-4 px-5">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" />Financial Information</CardTitle>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2"><IndianRupee className="h-4 w-4" />Financial Information</CardTitle>
                 </CardHeader>
                 <CardContent className="px-5 pb-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -1206,6 +1222,18 @@ ${chargesRows}
             </div>
           </div>
         )}
+
+        {/* ════════════════════ NURSING STATION ════════════════════ */}
+        {activeTab === 'nursing' && (
+          <NursingStation admitted={currentAdmitted} />
+        )}
+
+        {/* ═══════════ NOTES & ORDERS (notes on top, orders below) ═══════════ */}
+        {activeTab === 'notes-orders' && (
+          <NotesAndOrders admitted={currentAdmitted} />
+        )}
+
+        {/* ════════════════════ HOUSEKEEPING ════════════════════ */}
 
         {/* ════════════════════ DISCHARGE ════════════════════ */}
         {activeTab === 'discharge' && (
@@ -1488,7 +1516,12 @@ ${chargesRows}
                               </div>
                               <div>
                                 <div className="text-gray-400 uppercase font-semibold mb-1">Bill</div>
-                                <div className="text-gray-500">—</div>
+                                {a.billSummary ? (
+                                  <>
+                                    <div className="font-medium">₹{(a.billSummary.payableTotal || 0).toLocaleString()}</div>
+                                    <div className="text-gray-500 text-[11px]">{a.billSummary.billNumber || a.billSummary.status}</div>
+                                  </>
+                                ) : <div className="text-gray-400">Not billed</div>}
                               </div>
                             </div>
                             {a.admissionDiagnosis && (
@@ -1528,6 +1561,11 @@ ${chargesRows}
           </div>
         )}
 
+        {/* ════════════════════ COLLECTIONS ════════════════════ */}
+        {activeTab === 'collections' && (
+          <CollectionsReport orgInfo={orgInfo} />
+        )}
+
       </div>
 
       {/* ════════════ DIALOGS (shared across all tabs) ════════════ */}
@@ -1545,7 +1583,16 @@ ${chargesRows}
             <div><Label>Follow-up Date</Label><Input type="date" value={dischargeForm.followUpDate} onChange={e => setDischargeForm(p => ({ ...p, followUpDate: e.target.value }))} /></div>
             <div><Label>Discharge Notes</Label><Textarea value={dischargeForm.dischargeNotes} onChange={e => setDischargeForm(p => ({ ...p, dischargeNotes: e.target.value }))} rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setShowDischargeDialog(false)}>Cancel</Button><Button onClick={handleDischarge} disabled={savingDischarge}>{savingDischarge ? 'Discharging...' : 'Discharge Patient'}</Button></DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <div className="flex gap-2 mr-auto">
+              <Button variant="outline" size="sm" className="text-amber-700 border-amber-300" onClick={() => handleMarkExit('LAMA')} disabled={savingDischarge}>LAMA</Button>
+              <Button variant="outline" size="sm" className="text-gray-700" onClick={() => handleMarkExit('EXPIRED')} disabled={savingDischarge}>Expired</Button>
+            </div>
+            <Button variant="outline" onClick={() => setShowDischargeDialog(false)}>Cancel</Button>
+            <Button onClick={handleDischarge} disabled={savingDischarge}>
+              {savingDischarge ? 'Discharging...' : 'Discharge Patient'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1584,6 +1631,17 @@ ${chargesRows}
               </div>
               <div><Label>Bed Capacity *</Label><Input type="number" min={1} className="mt-1" value={wardForm.capacity} onChange={e => setWardForm(p => ({ ...p, capacity: e.target.value }))} /></div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Building / Block</Label><Input className="mt-1" value={wardForm.building} onChange={e => setWardForm(p => ({ ...p, building: e.target.value }))} placeholder="e.g. A Block" /></div>
+              <div><Label>Floor</Label><Input className="mt-1" value={wardForm.floor} onChange={e => setWardForm(p => ({ ...p, floor: e.target.value }))} placeholder="e.g. 3rd Floor" /></div>
+            </div>
+            <div>
+              <Label>Department</Label>
+              <Select value={wardForm.departmentId || ''} onValueChange={v => setWardForm(p => ({ ...p, departmentId: v }))}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Link to a department (optional)" /></SelectTrigger>
+                <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowWardDialog(false)}>Cancel</Button>
@@ -1620,7 +1678,7 @@ ${chargesRows}
             </DialogTitle>
           </DialogHeader>
           <div className="flex border-b mb-4">
-            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: DollarSign }].map(({ id, label, Icon }) => (
+            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: IndianRupee }].map(({ id, label, Icon }) => (
               <button key={id} onClick={() => handleViewTabChange(id)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${viewTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 <Icon className="h-4 w-4" />{label}
@@ -1672,55 +1730,9 @@ ${chargesRows}
             </div>
           )}
           {viewAdmission && viewTab === 'billing' && (
-            <div className="space-y-4">
-              {loadingBilling ? <p className="text-center py-4">Loading billing...</p> : !ipdBilling ? (
-                <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
-                  <p className="font-medium text-sm">Generate IPD Bill</p>
-                  <div className="flex gap-3 items-end">
-                    <div className="flex-1"><Label className="text-xs">Daily Room Rate (₹)</Label><Input type="number" min={0} value={billingDailyRate} onChange={e => setBillingDailyRate(e.target.value)} placeholder="e.g. 1500" /></div>
-                    <Button onClick={handleGenerateBill}>Generate Bill</Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div className="border rounded p-3 text-center"><p className="text-gray-500 text-xs">Daily Rate</p><p className="text-lg font-bold text-indigo-600">₹{(ipdBilling.dailyRate || 0).toLocaleString()}</p></div>
-                    <div className="border rounded p-3 text-center"><p className="text-gray-500 text-xs">Room Charges</p><p className="text-lg font-bold">₹{((ipdBilling.dailyRate || 0) * (differenceInDays(viewAdmission.dischargeDate ? new Date(viewAdmission.dischargeDate) : new Date(), new Date(viewAdmission.admissionDate)))).toLocaleString()}</p></div>
-                    <div className="border rounded p-3 text-center bg-green-50"><p className="text-gray-500 text-xs">Total</p><p className="text-lg font-bold text-green-700">₹{((ipdBilling.dailyRate || 0) * (differenceInDays(viewAdmission.dischargeDate ? new Date(viewAdmission.dischargeDate) : new Date(), new Date(viewAdmission.admissionDate))) + (ipdBilling.charges || []).reduce((s, c) => s + (c.amount || 0) * (c.quantity || 1), 0)).toLocaleString()}</p></div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm">Additional Charges</p>
-                    <Button size="sm" onClick={() => { setChargeForm(emptyCharge); setShowAddChargeDialog(true) }}><Plus className="h-4 w-4 mr-1" />Add Charge</Button>
-                  </div>
-                  {(ipdBilling.charges || []).length === 0 ? <p className="text-center text-gray-400 text-sm py-4">No additional charges</p> : (
-                    <Table>
-                      <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Type</TableHead><TableHead>Qty</TableHead><TableHead>Amount</TableHead><TableHead>Total</TableHead></TableRow></TableHeader>
-                      <TableBody>{(ipdBilling.charges || []).map((c, i) => (
-                        <TableRow key={c.id || i}><TableCell>{c.name}</TableCell><TableCell>{c.type}</TableCell><TableCell>{c.quantity || 1}</TableCell><TableCell>₹{(c.amount || 0).toLocaleString()}</TableCell><TableCell className="font-medium">₹{((c.amount || 0) * (c.quantity || 1)).toLocaleString()}</TableCell></TableRow>
-                      ))}</TableBody>
-                    </Table>
-                  )}
-                </div>
-              )}
-            </div>
+            <BillScreen admission={viewAdmission} orgInfo={orgInfo} />
           )}
           <DialogFooter><Button variant="outline" onClick={() => setShowViewAdmission(false)}>Close</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Charge Dialog */}
-      <Dialog open={showAddChargeDialog} onOpenChange={setShowAddChargeDialog}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Add Charge</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Item Name *</Label><Input value={chargeForm.name} onChange={e => setChargeForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. X-Ray" /></div>
-            <div><Label>Type</Label><Select value={chargeForm.type} onValueChange={v => setChargeForm(p => ({ ...p, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CHARGE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Amount (₹) *</Label><Input type="number" min={0} value={chargeForm.amount} onChange={e => setChargeForm(p => ({ ...p, amount: e.target.value }))} /></div>
-              <div><Label>Quantity</Label><Input type="number" min={1} value={chargeForm.quantity} onChange={e => setChargeForm(p => ({ ...p, quantity: e.target.value }))} /></div>
-            </div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setShowAddChargeDialog(false)}>Cancel</Button><Button onClick={handleAddCharge} disabled={savingCharge}>{savingCharge ? 'Saving...' : 'Add Charge'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

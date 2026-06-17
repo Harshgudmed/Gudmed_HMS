@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import client from '@/api/client'
 import RegisterPatientForm from '@/components/common/RegisterPatientForm'
+import { useDateFilter } from '@/components/common/DateFilter'
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -279,6 +280,8 @@ export default function PatientsModule() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [offset, setOffset] = useState(0)
+  const dateFilter = useDateFilter()
+  const { startDate: dfStart, endDate: dfEnd } = dateFilter.range
   const limit = 10
 
   const [showRegDialog, setShowRegDialog] = useState(false)
@@ -299,7 +302,7 @@ export default function PatientsModule() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Lab/pathology + radiology reports for the selected patient (live)
-  const [records, setRecords] = useState({ labOrders: [], radiologyOrders: [], admissions: [], appointments: [], invoices: [], billing: null })
+  const [records, setRecords] = useState({ labOrders: [], radiologyOrders: [], admissions: [], appointments: [], invoices: [], patientDocuments: [], billing: null })
   const [recordsLoading, setRecordsLoading] = useState(false)
 
   const fetchRecords = useCallback(async (patientId) => {
@@ -334,7 +337,7 @@ export default function PatientsModule() {
   const openPatient = useCallback((patient, tab = 'overview') => {
     setSelectedPatient(patient)
     setViewTab(tab)
-    setRecords({ labOrders: [], radiologyOrders: [], admissions: [], appointments: [], invoices: [], billing: null })
+    setRecords({ labOrders: [], radiologyOrders: [], admissions: [], appointments: [], invoices: [], patientDocuments: [], billing: null })
     setRecordsLoading(true)
     setShowViewDialog(true)
     fetchRecords(patient.id).finally(() => setRecordsLoading(false))
@@ -366,6 +369,8 @@ export default function PatientsModule() {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (status !== 'all') params.set('status', status)
+      if (dfStart) params.set('startDate', dfStart)
+      if (dfEnd) params.set('endDate', dfEnd)
       params.set('limit', String(limit))
       params.set('offset', String(offset))
       const res = await client.get(`/patients?${params}`)
@@ -376,11 +381,11 @@ export default function PatientsModule() {
     } finally {
       setLoading(false)
     }
-  }, [search, status, offset])
+  }, [search, status, offset, dfStart, dfEnd])
 
   useEffect(() => { fetchPatients() }, [fetchPatients])
   useEffect(() => { getOrgSettings().then(setOrgInfo) }, [])
-  useEffect(() => { setOffset(0) }, [search, status])
+  useEffect(() => { setOffset(0) }, [search, status, dfStart, dfEnd])
 
   const onSubmit = async (data) => {
     try {
@@ -858,6 +863,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
+        {dateFilter.control}
       </div>
 
       {/* Table */}
@@ -940,8 +946,8 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
                         }
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        {patient.labReportCount > 0 || patient.radiologyReportCount > 0 || patient.admittedCount > 0 ? (
-                          <div className="flex items-center gap-1.5">
+                        {patient.labReportCount > 0 || patient.radiologyReportCount > 0 || patient.admittedCount > 0 || patient.documentCount > 0 ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {patient.labReportCount > 0 && (
                               <button
                                 type="button"
@@ -979,6 +985,20 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
                               >
                                 <BedDouble className="h-3.5 w-3.5" />
                                 <span>IPD</span>
+                              </button>
+                            )}
+                            {patient.documentCount > 0 && (
+                              <button
+                                type="button"
+                                title={`View ${patient.documentCount} uploaded document${patient.documentCount > 1 ? 's' : ''}`}
+                                onClick={() => openPatient(patient, 'documents')}
+                                className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-blue-50 to-sky-50 text-blue-700 ring-1 ring-inset ring-blue-200 pl-1.5 pr-2 py-0.5 text-xs font-semibold shadow-sm transition-all hover:from-blue-100 hover:to-sky-100 hover:shadow hover:scale-105"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                <span>Documents</span>
+                                <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full bg-blue-600 text-white text-[10px] leading-none px-1">
+                                  {patient.documentCount}
+                                </span>
                               </button>
                             )}
                           </div>
@@ -1059,7 +1079,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
               </div>
 
               <Tabs value={viewTab} onValueChange={setViewTab}>
-                <TabsList className="grid w-full grid-cols-5 h-auto gap-1 p-1 bg-gray-100">
+                <TabsList className="grid w-full grid-cols-6 h-auto gap-1 p-1 bg-gray-100">
                   <TabsTrigger value="overview" className="flex items-center justify-center gap-1.5 py-2 data-[state=active]:shadow-sm data-[state=active]:text-blue-700">
                     <Users className="h-4 w-4" />
                     <span>Patient Details</span>
@@ -1090,6 +1110,13 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
                     <span>IPD</span>
                     {records.admissions.length > 0 && (
                       <Badge className="ml-0.5 bg-rose-100 text-rose-700 border-0 px-1.5 py-0 text-[10px]">{records.admissions.length}</Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="documents" className="flex items-center justify-center gap-1.5 py-2 data-[state=active]:shadow-sm data-[state=active]:text-sky-700">
+                    <FileText className="h-4 w-4" />
+                    <span>Documents</span>
+                    {records.patientDocuments?.length > 0 && (
+                      <Badge className="ml-0.5 bg-sky-100 text-sky-700 border-0 px-1.5 py-0 text-[10px]">{records.patientDocuments.length}</Badge>
                     )}
                   </TabsTrigger>
                 </TabsList>
@@ -1374,6 +1401,48 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
                               {adm.admissionReason && <div className="col-span-2"><span className="text-gray-500 text-xs font-medium uppercase">Reason: </span>{adm.admissionReason}</div>}
                               {adm.chiefComplaint && <div className="col-span-2"><span className="text-gray-500 text-xs font-medium uppercase">Chief Complaint: </span>{adm.chiefComplaint}</div>}
                               {adm.dischargeDate && <div><span className="text-gray-500 text-xs font-medium uppercase">Discharged: </span>{format(new Date(adm.dischargeDate), 'dd MMM yyyy')}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </TabsContent>
+
+                {/* Documents / KYC */}
+                <TabsContent value="documents" className="mt-4">
+                  <ScrollArea className="h-[360px] pr-3">
+                    {recordsLoading ? (
+                      <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-blue-500" /></div>
+                    ) : !records.patientDocuments || records.patientDocuments.length === 0 ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <FileText className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                        <p>No uploaded documents or KYC files</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {records.patientDocuments.map(doc => (
+                          <div key={doc.id} className="relative group rounded-lg border bg-white p-3 hover:shadow-md transition-shadow">
+                            <div className="aspect-[4/3] rounded bg-gray-100 mb-2 overflow-hidden flex items-center justify-center relative">
+                              {doc.fileType.startsWith('image/') ? (
+                                <img src={`http://localhost:5000${doc.fileUrl}`} alt={doc.title} className="w-full h-full object-cover" />
+                              ) : (
+                                <FileText className="h-10 w-10 text-gray-400" />
+                              )}
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <a href={`http://localhost:5000${doc.fileUrl}`} target="_blank" rel="noreferrer" className="bg-white text-blue-600 rounded-full p-2 hover:scale-110 transition-transform shadow-lg">
+                                  <Eye className="h-4 w-4" />
+                                </a>
+                              </div>
+                            </div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="font-medium text-sm truncate" title={doc.title}>{doc.title}</p>
+                                <p className="text-xs text-gray-500 capitalize">{doc.documentType.replace('_', ' ')}</p>
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-2">
+                              Uploaded: {format(new Date(doc.uploadedAt), 'dd MMM yyyy')}
                             </div>
                           </div>
                         ))}

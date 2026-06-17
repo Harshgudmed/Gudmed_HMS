@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useOrgSettings } from '@/lib/useOrgSettings'
 import { format, addDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ScanLine } from "lucide-react";
+import BarcodeScanner from "./BarcodeScanner";
 import {
   Pill,
   Search,
@@ -20,7 +21,10 @@ import {
   FileText,
   Loader2,
   Download,
+  Upload,
 } from "lucide-react";
+import ImportMedicinesDialog from "./ImportMedicinesDialog";
+import MedicineNameAutocomplete from "./MedicineNameAutocomplete";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -269,6 +273,81 @@ export default function PharmacyModule() {
   const [drugForm, setDrugForm] = useState(emptyDrug);
   const [editingDrugId, setEditingDrugId] = useState(null);
   const [savingDrug, setSavingDrug] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanLooking, setScanLooking] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+
+  // Fill the drug form from an open-catalog medicine pick. Composition/company/
+  // price come straight from the dataset; strength + dosage form are inferred.
+  const applyReferenceMedicine = useCallback((row) => {
+    const composition = row.composition || "";
+    // First strength token in the composition, e.g. "Paracetamol (500mg)" -> 500mg
+    const strengthMatch = composition.match(/(\d+(?:\.\d+)?\s?(?:mg\/ml|mcg|mg|ml|iu|%[\s\w/]*|g))/i);
+    // Infer dosage form from the pack label (e.g. "strip of 10 tablets")
+    const pack = (row.packSize || "").toLowerCase();
+    const FORMS = ["tablet", "capsule", "syrup", "injection", "cream", "gel", "drop", "ointment", "solution", "suspension", "powder", "lotion", "spray", "inhaler", "sachet"];
+    const formHit = FORMS.find((f) => pack.includes(f));
+    setDrugForm((p) => ({
+      ...p,
+      name: row.name ?? p.name,
+      saltName: composition || p.saltName,
+      companyName: row.manufacturer ?? p.companyName,
+      mrp: row.price ?? p.mrp,
+      strength: strengthMatch ? strengthMatch[1].replace(/\s+/g, "") : p.strength,
+      form: formHit ? formHit.charAt(0).toUpperCase() + formHit.slice(1) : p.form,
+    }));
+    toast.success(`Filled "${row.name}" from catalog — set price/stock & save`);
+  }, []);
+
+  // Resolve a scanned/typed barcode against the medicine master and auto-fill
+  // the form. A miss is not an error — it's the "new medicine" path.
+  const handleBarcodeLookup = useCallback(async (code) => {
+    const barcode = String(code || "").trim();
+    if (!barcode) return;
+    setDrugForm((p) => ({ ...p, barcode }));
+    setScanLooking(true);
+    try {
+      const res = await client.get(
+        `/pharmacy/drugs/lookup?barcode=${encodeURIComponent(barcode)}`
+      );
+      if (res?.found && res.data) {
+        const d = res.data;
+        const batch = d.batches?.[0];
+        const toDateInput = (v) => (v ? new Date(v).toISOString().slice(0, 10) : "");
+        setDrugForm((p) => ({
+          ...p,
+          barcode,
+          name: d.drugName ?? p.name,
+          saltName: d.genericName ?? p.saltName,
+          companyName: d.brandName ?? p.companyName,
+          category: d.drugCategory ?? p.category,
+          form: d.dosageForm ?? p.form,
+          strength: d.strength ?? p.strength,
+          mrp: d.mrp ?? d.sellingPrice ?? p.mrp,
+          rate: d.purchasePrice ?? d.costPrice ?? p.rate,
+          minStock: d.reorderLevel ?? p.minStock,
+          batchNumber: batch?.batchNumber ?? p.batchNumber,
+          expiryDate: batch?.expiryDate ? toDateInput(batch.expiryDate) : p.expiryDate,
+          manufacturingDate: batch?.manufactureDate
+            ? toDateInput(batch.manufactureDate)
+            : p.manufacturingDate,
+        }));
+        if (res.source === "external") {
+          toast.success(
+            `Fetched "${d.drugName}" online — complete strength/price/stock, then save`
+          );
+        } else {
+          toast.success(`Found "${d.drugName}" — verify the details and save`);
+        }
+      } else {
+        toast.info("Not found online — fill the details once; future scans auto-fill");
+      }
+    } catch (err) {
+      toast.error(err?.message || "Barcode lookup failed");
+    } finally {
+      setScanLooking(false);
+    }
+  }, []);
 
   // View drug dialog
   const [showViewDrugDialog, setShowViewDrugDialog] = useState(false);
@@ -387,10 +466,13 @@ export default function PharmacyModule() {
         dosageForm: drugForm.form,
         strength: drugForm.strength,
         sellingPrice: parseFloat(drugForm.mrp) || 0,
+        mrp: parseFloat(drugForm.mrp) || undefined,
         costPrice: parseFloat(drugForm.rate) || 0,
+        purchasePrice: parseFloat(drugForm.rate) || undefined,
         markupPercentage: parseFloat(drugForm.discountPercentage) || 0,
         reorderLevel: parseInt(drugForm.minStock) || 10,
-        drugCode: drugForm.barcode || `DRG${Date.now()}`,
+        barcode: drugForm.barcode?.trim() || undefined,
+        drugCode: editingDrugId ? undefined : `DRG${Date.now()}`,
         quantityInStock: editingDrugId
           ? undefined
           : parseInt(drugForm.initialQty) || 0,
@@ -569,52 +651,71 @@ export default function PharmacyModule() {
 </body></html>`);
   };
 
-  const handleCompleteDispense = async () => {
+  // Bill + print + reset after a successful (full or partial) dispense.
+  const afterDispense = (rx) => {
+    const items = rx.items || [];
+    const totalCost = items.reduce((s, i) => s + (i.unitPrice || 0) * i.quantity, 0);
+    if (rx.patientId && totalCost > 0) {
+      client
+        .post("/billing", {
+          resource: "invoice",
+          patientId: rx.patientId,
+          items: items.map((i) => ({
+            type: "pharmacy",
+            description: i.drugName,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice || 0,
+            discount: 0,
+            tax: 0,
+            total: (i.unitPrice || 0) * i.quantity,
+          })),
+        })
+        .catch(() => {});
+    }
+    handlePrintLabel(rx);
+    setShowDispenseDialog(false);
+    setSelectedPrescription(null);
+    setDispenseWarnings([]);
+    fetchAll();
+  };
+
+  // Stock-aware dispensing. The backend validates stock and decrements
+  // inventory + batches + writes a ledger row. allowPartial=true dispenses
+  // only what's in stock and marks the prescription partially_dispensed.
+  const runDispense = async (allowPartial) => {
     if (!selectedPrescription) return;
     setDispensing(true);
     try {
-      const res = await client.patch(
-        `/pharmacy/prescriptions/${selectedPrescription.id}`,
-        {
-          status: "fully_dispensed",
-          dispensedAt: new Date().toISOString(),
-        },
+      const res = await client.post(
+        `/pharmacy/prescriptions/${selectedPrescription.id}/dispense`,
+        { allowPartial },
       );
-      if (res.success) {
-        const items = selectedPrescription.items || [];
-        const totalCost = items.reduce(
-          (s, i) => s + (i.unitPrice || 0) * i.quantity,
-          0,
+      toast.success(res.message || "Prescription dispensed");
+      afterDispense(selectedPrescription);
+    } catch (err) {
+      if (err.code === "INSUFFICIENT_STOCK") {
+        const shortages = err.details?.shortages || [];
+        const summary = shortages
+          .map((s) => `${s.drugName}: need ${s.requested}, have ${s.available}`)
+          .join("\n");
+        // Offer partial dispensing of whatever IS in stock.
+        const ok = window.confirm(
+          `Insufficient stock:\n\n${summary}\n\nDispense the available quantity now (partial)?`,
         );
-        if (selectedPrescription.patientId && totalCost > 0) {
-          client
-            .post("/billing", {
-              resource: "invoice",
-              patientId: selectedPrescription.patientId,
-              items: items.map((i) => ({
-                type: "pharmacy",
-                description: i.drugName,
-                quantity: i.quantity,
-                unitPrice: i.unitPrice || 0,
-                discount: 0,
-                tax: 0,
-                total: (i.unitPrice || 0) * i.quantity,
-              })),
-            })
-            .catch(() => {});
+        if (ok) {
+          await runDispense(true);
+          return;
         }
-        handlePrintLabel(selectedPrescription);
-        toast.success("Prescription dispensed successfully");
-        setShowDispenseDialog(false);
-        setSelectedPrescription(null);
-        setDispenseWarnings([]);
-        fetchAll();
-      } else toast.error(res.error || "Failed");
-    } catch {
-      toast.error("Failed to complete dispensing");
+        toast.error("Dispensing blocked — insufficient stock");
+      } else {
+        toast.error(err.message || "Failed to complete dispensing");
+      }
+    } finally {
+      setDispensing(false);
     }
-    setDispensing(false);
   };
+
+  const handleCompleteDispense = () => runDispense(false);
 
   // ── Batch CRUD ─────────────────────────────────────────────────────────────
 
@@ -924,6 +1025,10 @@ export default function PharmacyModule() {
           <Button variant="outline" onClick={() => setShowSaleDialog(true)}>
             <ShoppingCart className="h-4 w-4 mr-1" />
             Direct Sale
+          </Button>
+          <Button variant="outline" onClick={() => setShowImport(true)}>
+            <Upload className="h-4 w-4 mr-1" />
+            Import Excel/CSV
           </Button>
           <Button
             onClick={() => {
@@ -2002,11 +2107,11 @@ export default function PharmacyModule() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <Label className="text-xs font-medium">Medicine Name *</Label>
-                  <Input
-                    className="mt-1"
+                  <MedicineNameAutocomplete
                     value={drugForm.name}
-                    onChange={(e) => setDrugForm((p) => ({ ...p, name: e.target.value }))}
-                    placeholder="e.g. Paracetamol 500mg Tablet"
+                    onChange={(v) => setDrugForm((p) => ({ ...p, name: v }))}
+                    onSelect={applyReferenceMedicine}
+                    placeholder="Type to search 2.5 lakh Indian medicines…"
                   />
                 </div>
                 <div>
@@ -2056,12 +2161,30 @@ export default function PharmacyModule() {
                 </div>
                 <div className="col-span-2">
                   <Label className="text-xs font-medium">Barcode</Label>
-                  <Input
-                    className="mt-1"
-                    value={drugForm.barcode}
-                    onChange={(e) => setDrugForm((p) => ({ ...p, barcode: e.target.value }))}
-                    placeholder="Optional"
-                  />
+                  <div className="mt-1 flex items-center gap-2">
+                    <Input
+                      value={drugForm.barcode}
+                      onChange={(e) => setDrugForm((p) => ({ ...p, barcode: e.target.value }))}
+                      onKeyDown={(e) => {
+                        // Enter triggers lookup — also how USB keyboard-wedge scanners submit.
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleBarcodeLookup(drugForm.barcode);
+                        }
+                      }}
+                      placeholder="Scan or type, then Enter to auto-fill"
+                      disabled={scanLooking}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Scan with camera"
+                      onClick={() => setShowScanner(true)}
+                    >
+                      <ScanLine className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2176,6 +2299,18 @@ export default function PharmacyModule() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <BarcodeScanner
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleBarcodeLookup}
+      />
+
+      <ImportMedicinesDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={fetchAll}
+      />
 
       {/* ── VIEW DRUG ── */}
       <Dialog open={showViewDrugDialog} onOpenChange={setShowViewDrugDialog}>
