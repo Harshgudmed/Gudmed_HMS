@@ -27,6 +27,7 @@ import NursingStation from '@/components/inpatient/NursingStation'
 import NotesAndOrders from '@/components/inpatient/NotesAndOrders'
 import BillScreen from '@/components/inpatient/BillScreen'
 import CollectionsReport from '@/components/inpatient/CollectionsReport'
+import ConsultationsTab from '@/components/inpatient/ConsultationsTab'
 
 function admissionLabel(a) {
   if (!a?.id) return '—'
@@ -1678,7 +1679,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
             </DialogTitle>
           </DialogHeader>
           <div className="flex border-b mb-4">
-            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: IndianRupee }].map(({ id, label, Icon }) => (
+            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: IndianRupee }, { id: 'consultations', label: 'Consultations', Icon: Stethoscope }].map(({ id, label, Icon }) => (
               <button key={id} onClick={() => handleViewTabChange(id)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${viewTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 <Icon className="h-4 w-4" />{label}
@@ -1731,6 +1732,13 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
           )}
           {viewAdmission && viewTab === 'billing' && (
             <BillScreen admission={viewAdmission} orgInfo={orgInfo} />
+          )}
+          {viewAdmission && viewTab === 'consultations' && (
+            <ConsultationsTab
+              admission={viewAdmission}
+              doctors={doctors}
+              departments={departments}
+            />
           )}
           <DialogFooter><Button variant="outline" onClick={() => setShowViewAdmission(false)}>Close</Button></DialogFooter>
         </DialogContent>

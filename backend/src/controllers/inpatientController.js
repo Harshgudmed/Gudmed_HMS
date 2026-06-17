@@ -31,6 +31,7 @@ import {
   getOrder,
 } from "../inpatient/orderService.js";
 import { billProcedureOrder } from "../inpatient/orderBillingService.js";
+import { billConsultation } from "../inpatient/consultationBillingService.js";
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 
@@ -68,14 +69,6 @@ const admissionSchema = z.object({
   criticalLevel: z.string().optional(),
   admittingDoctorId: z.string().optional(),
   attendingDoctorId: z.string().optional(),
-});
-
-const clinicalNoteSchema = z.object({
-  admissionId: z.string().min(1, "Admission ID is required"),
-  note: z.string().min(1, "Note is required"),
-  noteType: z.string().optional(),
-  authorName: z.string().optional(),
-  vitals: z.any().optional(),
 });
 
 // ─── Tenant-safety helpers ────────────────────────────────────────────────────
@@ -710,12 +703,38 @@ export async function getAll(req, res) {
       return res.json({ success: true, data });
     }
 
+    // ── ipd-consultation GET ──────────────────────────────────────────────────
+    if (resource === "ipd-consultation") {
+      const where = { organizationId: ORGANIZATION_ID };
+      if (req.query.admissionId) where.admissionId = req.query.admissionId;
+      if (req.query.status)      where.status      = req.query.status;
+      // Doctor portal: mine=true → consultations assigned to me OR requested by me
+      if (req.query.mine === "true" && req.user?.id) {
+        where.OR = [
+          { consultingDoctorId: req.user.id },
+          { requestedById:      req.user.id },
+        ];
+      }
+      const consultations = await db.ipdConsultation.findMany({
+        where,
+        include: {
+          consultingDoctor: { select: { id: true, fullName: true } },
+          requestedBy:      { select: { id: true, fullName: true } },
+          department:       { select: { id: true, name: true } },
+          ipdCharge:        { select: { id: true, lineTotal: true, status: true } },
+        },
+        orderBy: { requestedAt: "desc" },
+      });
+      return res.json({ success: true, data: consultations });
+    }
+
     return res
       .status(400)
       .json({
         error:
-          "Invalid resource. Use: wards, beds, admissions, notes, billing, stats, tariff-preview, running-bill, bed-categories, tariff-plans, orderables, orders, order, order-worklist",
+          "Invalid resource. Use: wards, beds, admissions, notes, billing, stats, tariff-preview, running-bill, bed-categories, tariff-plans, orderables, orders, order, order-worklist, ipd-consultation",
       });
+
   } catch (err) {
     console.error("inpatient getAll error:", err);
     if (err?.status)
@@ -742,6 +761,36 @@ export async function create(req, res) {
           code: "FORBIDDEN",
           error: `Your role may not perform this IPD action (${resource})`,
         });
+    }
+
+    // ── ipd-consultation POST ─────────────────────────────────────────────────
+    if (resource === "ipd-consultation") {
+      const { admissionId, consultingDoctorId, departmentId,
+               referralReason, chargeItemCode, scheduledAt } = body;
+      if (!admissionId || !consultingDoctorId) {
+        return res.status(400).json({ success: false, error: "admissionId and consultingDoctorId are required" });
+      }
+      const admission = await ownedAdmission(ORGANIZATION_ID, admissionId);
+      if (!admission)
+        return res.status(404).json({ success: false, error: "Admission not found" });
+      if (admission.status !== "admitted")
+        return res.status(409).json({ success: false, error: "Patient is not currently admitted" });
+
+      const consultation = await db.ipdConsultation.create({
+        data: {
+          organizationId:    ORGANIZATION_ID,
+          admissionId,
+          consultingDoctorId,
+          requestedById:     req.user?.id  || null,
+          departmentId:      departmentId  || null,
+          referralReason:    referralReason || null,
+          chargeItemCode:    chargeItemCode || null,
+          scheduledAt:       scheduledAt ? new Date(scheduledAt) : null,
+          status:            "REQUESTED",
+        },
+      });
+      await auditIpd(req, ORGANIZATION_ID, { action: "create", entityType: "ipd.consultation", entityId: consultation.id, newValues: consultation });
+      return res.status(201).json({ success: true, data: consultation });
     }
 
     if (resource === "ward") {
@@ -947,8 +996,7 @@ export async function create(req, res) {
     }
 
     if (resource === "transfer") {
-      const { admissionId, toWardId, toBedId, transferReason, authorName } =
-        body;
+      const { admissionId, toBedId, transferReason, authorName } = body;
       if (!admissionId || !toBedId) {
         return res
           .status(400)
@@ -1315,52 +1363,6 @@ export async function create(req, res) {
         },
       });
       return res.status(201).json({ success: true, data: newCharge });
-    }
-
-    if (resource === "clinical-note") {
-      const parsed = clinicalNoteSchema.safeParse(body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.flatten() });
-      }
-
-      const { admissionId, note, noteType, authorName, vitals } = parsed.data;
-
-      const admission = await db.admission.findFirst({
-        where: { id: admissionId, organizationId: ORGANIZATION_ID },
-        select: { clinicalNotes: true },
-      });
-
-      if (!admission) {
-        return res.status(404).json({ error: "Admission not found" });
-      }
-
-      let existingNotes = [];
-      try {
-        existingNotes = admission.clinicalNotes
-          ? JSON.parse(admission.clinicalNotes)
-          : [];
-      } catch {
-        existingNotes = [];
-      }
-      if (!Array.isArray(existingNotes)) existingNotes = [];
-
-      const newNote = {
-        id: `note-${Date.now()}`,
-        date: new Date().toISOString(),
-        noteType: noteType ?? null,
-        note,
-        authorName: authorName ?? null,
-        ...(vitals !== undefined ? { vitals } : {}),
-      };
-
-      const updatedNotes = [...existingNotes, newNote];
-
-      await db.admission.update({
-        where: { id: admissionId },
-        data: { clinicalNotes: JSON.stringify(updatedNotes) },
-      });
-
-      return res.status(201).json(newNote);
     }
 
     // Enterprise: post a charge line, auto-priced by the tariff engine (idempotent per source).
@@ -2258,7 +2260,7 @@ export async function create(req, res) {
       .status(400)
       .json({
         error:
-          "Invalid resource. Use: ward, bed, admission, note, billing, charge, clinical-note, sync-beds, transfer, post-charge, vitals, note-v2, medication-administration, discharge-finalize, mark-exit, order, order-ack, order-start, order-complete, order-cancel",
+          "Invalid resource. Use: ward, bed, admission, note, billing, charge, sync-beds, transfer, post-charge, vitals, note-v2, medication-administration, discharge-finalize, mark-exit, order, order-ack, order-start, order-complete, order-cancel",
       });
   } catch (err) {
     console.error("inpatient create error:", err);
@@ -2293,6 +2295,87 @@ export async function update(req, res) {
           code: "FORBIDDEN",
           error: `Your role may not perform this IPD action (${resource})`,
         });
+    }
+
+    // ── ipd-consultation PATCH ─────────────────────────────────────────────────
+    if (resource === "ipd-consultation") {
+      const consult = await db.ipdConsultation.findFirst({
+        where: { id, organizationId: ORGANIZATION_ID },
+      });
+      if (!consult)
+        return res.status(404).json({ success: false, error: "Consultation not found" });
+      if (["BILLED", "CANCELLED"].includes(consult.status))
+        return res.status(409).json({ success: false, error: `Consultation is already ${consult.status.toLowerCase()}` });
+
+      const newStatus         = req.body.status || updates.status;
+      const consultationNotes = req.body.consultationNotes || updates.consultationNotes;
+      const diagnosis         = req.body.diagnosis || updates.diagnosis;
+      const recommendedPlan   = req.body.recommendedPlan || updates.recommendedPlan;
+      const followUpNotes     = req.body.followUpNotes || updates.followUpNotes;
+      const followUpRequired  = req.body.followUpRequired ?? updates.followUpRequired;
+
+      const VALID = ["REQUESTED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+      if (newStatus && !VALID.includes(newStatus))
+        return res.status(400).json({ success: false, error: `Invalid status. Use: ${VALID.join(", ")}` });
+
+      // COMPLETE → auto-bill in a transaction
+      if (newStatus === "COMPLETED") {
+        if (consult.ipdChargeId)
+          return res.status(409).json({ success: false, error: "Already billed" });
+
+        const completedAt = new Date();
+        // Inline update then bill inside a transaction
+        const result = await db.$transaction(async (tx) => {
+          const updated = await tx.ipdConsultation.update({
+            where: { id },
+            data: {
+              status: "COMPLETED",
+              completedAt,
+              ...(consultationNotes !== undefined && { consultationNotes }),
+              ...(diagnosis         !== undefined && { diagnosis }),
+              ...(recommendedPlan   !== undefined && { recommendedPlan }),
+              ...(followUpNotes     !== undefined && { followUpNotes }),
+              ...(followUpRequired  !== undefined && { followUpRequired: Boolean(followUpRequired) }),
+            },
+          });
+          const { charge, commission } = await billConsultation(
+            tx, ORGANIZATION_ID,
+            { ...updated, completedAt },
+            { id: req.user?.id, name: req.user?.fullName || req.user?.name },
+          );
+          return { updated, charge, commission };
+        });
+
+        await auditIpd(req, ORGANIZATION_ID, {
+          action: "complete", entityType: "ipd.consultation", entityId: id,
+          newValues: { status: "BILLED", chargeId: result.charge?.id },
+        });
+
+        // Re-fetch with relations for the response
+        const fresh = await db.ipdConsultation.findUnique({
+          where: { id },
+          include: {
+            consultingDoctor: { select: { id: true, fullName: true } },
+            department:       { select: { id: true, name: true } },
+            ipdCharge:        { select: { id: true, lineTotal: true } },
+          },
+        });
+        return res.json({ success: true, data: fresh, charge: result.charge, commission: result.commission });
+      }
+
+      // Simple status transitions (REQUESTED → IN_PROGRESS, or CANCELLED)
+      const updated = await db.ipdConsultation.update({
+        where: { id },
+        data: {
+          ...(newStatus !== undefined && { status: newStatus }),
+          ...(consultationNotes !== undefined && { consultationNotes }),
+          ...(diagnosis         !== undefined && { diagnosis }),
+          ...(recommendedPlan   !== undefined && { recommendedPlan }),
+          ...(followUpNotes     !== undefined && { followUpNotes }),
+          ...(followUpRequired  !== undefined && { followUpRequired: Boolean(followUpRequired) }),
+        },
+      });
+      return res.json({ success: true, data: updated });
     }
 
     if (resource === "admission") {
@@ -2526,7 +2609,24 @@ export async function remove(req, res) {
       return res.json({ success: true });
     }
 
-    return res.status(400).json({ error: "Invalid resource. Use: ward, bed" });
+    // ── ipd-consultation DELETE (cancel) ──────────────────────────────────────
+    if (resource === "ipd-consultation") {
+      const consult = await db.ipdConsultation.findFirst({
+        where: { id, organizationId: ORGANIZATION_ID },
+      });
+      if (!consult)
+        return res.status(404).json({ success: false, error: "Consultation not found" });
+      if (["BILLED", "CANCELLED"].includes(consult.status))
+        return res.status(409).json({ success: false, error: `Cannot cancel a ${consult.status.toLowerCase()} consultation` });
+
+      await db.ipdConsultation.update({
+        where: { id },
+        data: { status: "CANCELLED" },
+      });
+      return res.json({ success: true });
+    }
+
+    return res.status(400).json({ error: "Invalid resource. Use: ward, bed, ipd-consultation" });
   } catch (err) {
     console.error("inpatient remove error:", err);
     return res.status(500).json({ error: "Internal server error" });

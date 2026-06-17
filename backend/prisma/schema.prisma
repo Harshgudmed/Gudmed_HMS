@@ -111,6 +111,7 @@ model Organization {
   dayCareCases        DayCareCase[]
   insuranceCases      InsuranceCase[]
   insuranceClaims     InsuranceClaim[]
+  ipdConsultations    IpdConsultation[]
 }
 
 /// User (Staff)
@@ -197,6 +198,10 @@ model User {
   // Day Care cases where this user is the treating doctor
   dayCareCases           DayCareCase[]           @relation("DayCareDoctor")
 
+  // IPD Specialist Consultations
+  ipdConsultationsAsDoctor  IpdConsultation[] @relation("ConsultingDoctorIPD")
+  ipdConsultationsRequested IpdConsultation[] @relation("ConsultationRequestedBy")
+
   @@index([organizationId])
   @@index([role])
   @@index([isActive])
@@ -215,9 +220,10 @@ model Department {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  users        User[]
-  wards        Ward[]
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users            User[]
+  wards            Ward[]
+  ipdConsultations IpdConsultation[]
 
   @@index([organizationId])
 }
@@ -771,6 +777,7 @@ model Admission {
   bills                     Bill[]
   billPayments              BillPayment[]
   clinicalOrders            ClinicalOrder[]
+  ipdConsultations          IpdConsultation[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -2277,6 +2284,7 @@ model IpdCharge {
   admission    Admission     @relation(fields: [admissionId], references: [id], onDelete: Restrict)
   chargeItem   ChargeMaster? @relation(fields: [chargeItemId], references: [id])
   bill         Bill?         @relation(fields: [billId], references: [id], onDelete: SetNull)
+  consultation IpdConsultation?
 
   @@unique([organizationId, sourceModule, sourceRef])
   @@index([organizationId, admissionId])
@@ -2710,5 +2718,62 @@ model InsuranceClaim {
   @@unique([organizationId, claimNumber])
   @@index([organizationId])
   @@index([caseId])
+  @@index([status])
+}
+
+// ============================================
+// IPD SPECIALIST CONSULTATION
+// ============================================
+
+/// IPD Specialist Consultation — called during inpatient stay.
+/// Links an Admission to any external-department doctor (Eye, ENT, Ortho, Medicine…).
+/// On status → COMPLETED the service auto-posts one IpdCharge (per-visit, room-adjusted)
+/// and one DoctorCommission row using the consulting doctor's DoctorCommissionConfig.
+model IpdConsultation {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  admissionId        String
+  consultingDoctorId String
+  requestedById      String?
+  departmentId       String?
+
+  // ChargeMaster.code to bill on completion (e.g. "CONSULT-ENT")
+  chargeItemCode     String?
+
+  // Scheduling
+  requestedAt  DateTime  @default(now())
+  scheduledAt  DateTime?
+  completedAt  DateTime?
+
+  // Status lifecycle: REQUESTED | IN_PROGRESS | COMPLETED | BILLED | CANCELLED
+  status       String    @default("REQUESTED")
+
+  // Clinical output (filled by consulting doctor)
+  referralReason     String?
+  consultationNotes  String?
+  diagnosis          String?
+  recommendedPlan    String?
+  followUpRequired   Boolean  @default(false)
+  followUpNotes      String?
+
+  // Billing linkage — set automatically when status → COMPLETED
+  ipdChargeId      String?  @unique   // one charge per consultation (SetNull on charge cancel)
+  feeApplied       Float?             // snapshot of fee charged
+  commissionAmount Float?             // snapshot of commission earned
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── Relations ────────────────────────────────────────────────────────────────
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission        Admission     @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+  consultingDoctor User          @relation("ConsultingDoctorIPD", fields: [consultingDoctorId], references: [id])
+  requestedBy      User?         @relation("ConsultationRequestedBy", fields: [requestedById], references: [id])
+  department       Department?   @relation(fields: [departmentId], references: [id])
+  ipdCharge        IpdCharge?    @relation(fields: [ipdChargeId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, admissionId])
+  @@index([consultingDoctorId])
   @@index([status])
 }

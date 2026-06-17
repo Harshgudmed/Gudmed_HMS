@@ -24,7 +24,6 @@ const PERMS = {
   vitals: ['nurse'],
   'note-v2': ['doctor', 'nurse'],
   note: ['doctor', 'nurse'],
-  'clinical-note': ['doctor', 'nurse'],
   'medication-administration': ['doctor', 'nurse'],
 
   // Billing
@@ -49,6 +48,10 @@ const PERMS = {
   'order-start': ['lab_technician', 'radiology_technician', 'pharmacist', 'nurse'],
   'order-complete': ['lab_technician', 'radiology_technician', 'pharmacist', 'doctor', 'nurse'],
   'order-cancel': ['doctor'],
+
+  // ── IPD Specialist Consultations ──
+  // Any clinical role can request; only the consulting doctor updates notes/completes.
+  'ipd-consultation': ['receptionist', 'doctor', 'nurse'],
 }
 
 // An order may only be COMPLETED by the discipline that fulfils that order type.

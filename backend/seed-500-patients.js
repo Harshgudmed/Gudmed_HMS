@@ -229,6 +229,7 @@ async function seed500Patients() {
               dateOfDeath: deathDate,
               timeOfDeath: `${Math.floor(Math.random() * 24)}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
               causeOfDeath: getRandomItem(['Natural Causes', 'Heart Failure', 'Respiratory Failure', 'Complications']),
+              placeOfDeath: 'Hospital',
               issuedAt: deathDate,
               isActive: true,
             },

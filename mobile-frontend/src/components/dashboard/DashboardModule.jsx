@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useOrgSettings } from '@/lib/useOrgSettings'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/lib/auth'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   Users, Calendar, Clock, IndianRupee, FlaskConical, Pill, BedDouble,
@@ -32,6 +33,8 @@ const getStatusBadgeClass = (status) => {
 
 export default function DashboardModule() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const role = user?.role || 'admin'
   const { orgInfo } = useOrgSettings() // Now automatically updates when settings change
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -91,23 +94,23 @@ export default function DashboardModule() {
               <UserPlus className="h-6 w-6" />
               <span>New Patient</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/appointments')}>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate(`/${role}/appointments?action=new`)}>
               <Calendar className="h-6 w-6" />
               <span>Book Appointment</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/triage')}>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate(`/${role}/triage`)}>
               <Stethoscope className="h-6 w-6" />
               <span>Triage Patient</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/laboratory')}>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate(`/${role}/laboratory`)}>
               <FlaskConical className="h-6 w-6" />
               <span>Lab Order</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/pharmacy')}>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate(`/${role}/pharmacy`)}>
               <Pill className="h-6 w-6" />
               <span>Dispense</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate('/billing')}>
+            <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => navigate(`/${role}/billing`)}>
               <Receipt className="h-6 w-6" />
               <span>New Invoice</span>
             </Button>
@@ -117,7 +120,7 @@ export default function DashboardModule() {
 
       {/* Primary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all" onClick={() => navigate('/patients')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all" onClick={() => navigate(`/${role}/patients`)}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Patients</CardTitle>
             <Users className="h-5 w-5 text-blue-600" />
@@ -130,7 +133,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-purple-300 transition-all" onClick={() => navigate('/queue')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-purple-300 transition-all" onClick={() => navigate(`/${role}/appointments`)}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Today's Appointments</CardTitle>
             <Calendar className="h-5 w-5 text-purple-600" />
@@ -141,7 +144,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-orange-300 transition-all" onClick={() => navigate('/triage')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-orange-300 transition-all" onClick={() => navigate(`/${role}/queue`)}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Queue Waiting</CardTitle>
             <Clock className="h-5 w-5 text-orange-600" />
@@ -152,7 +155,7 @@ export default function DashboardModule() {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-green-300 transition-all" onClick={() => navigate('/billing')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:border-green-300 transition-all" onClick={() => navigate(`/${role}/billing`)}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Today's Revenue</CardTitle>
             <IndianRupee className="h-5 w-5 text-green-600" />

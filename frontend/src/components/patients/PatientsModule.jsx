@@ -1017,10 +1017,6 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;backgrou
                             onClick={() => openPatient(patient)}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600" title="Edit"
-                            onClick={() => openEdit(patient)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Print OPD Prescription"
                             onClick={() => handlePrintCard(patient)}>
                             <Printer className="h-4 w-4" />
