@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { z } from 'zod'
 
 // Validation schemas
@@ -57,7 +58,7 @@ const serviceUpdateSchema = z.object({
 
 export async function getAll(req, res) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { resource, category, status, patientId, invoiceId } = req.query
     const limit = parseInt(req.query.limit || '10')
     const offset = parseInt(req.query.offset || '0')
@@ -222,7 +223,7 @@ export async function getAll(req, res) {
 
 export async function create(req, res) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { resource } = req.body
 
     if (resource === 'service') {
@@ -384,7 +385,7 @@ export async function create(req, res) {
 
 export async function update(req, res) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { resource } = req.body
 
     if (resource === 'invoice') {

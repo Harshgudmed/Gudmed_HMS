@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import bcrypt from 'bcryptjs'
 
 function parseOrg(org) {
@@ -12,7 +13,7 @@ function parseOrg(org) {
 
 export async function getOrganization(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const org = await db.organization.findUnique({ where: { id: ORG_ID } })
     res.json({ success: true, data: parseOrg(org) })
   } catch (err) { next(err) }
@@ -20,7 +21,7 @@ export async function getOrganization(req, res, next) {
 
 export async function updateOrganization(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const data = { ...req.body }
     delete data.resource
     if (data.settings && typeof data.settings === 'object') {
@@ -36,7 +37,7 @@ export async function updateOrganization(req, res, next) {
 
 export async function getUsers(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const users = await db.user.findMany({
       where: { organizationId: ORG_ID },
       include: { department: { select: { id: true, name: true } } },
@@ -50,7 +51,7 @@ export async function getUsers(req, res, next) {
 
 export async function createUser(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { fullName, email, role, departmentId, phone, specialization, password } = req.body
     if (!password || password.length < 6) {
       return res.status(400).json({ success: false, error: 'A password of at least 6 characters is required so the user can log in' })
@@ -108,7 +109,7 @@ export async function toggleUserStatus(req, res, next) {
 
 export async function getDepartments(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const departments = await db.department.findMany({
       where: { organizationId: ORG_ID },
       orderBy: { name: 'asc' },
@@ -119,7 +120,7 @@ export async function getDepartments(req, res, next) {
 
 export async function createDepartment(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { name, description } = req.body
     const dept = await db.department.create({
       data: { organizationId: ORG_ID, name, description: description || null },
@@ -130,7 +131,7 @@ export async function createDepartment(req, res, next) {
 
 export async function getBillingServices(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const services = await db.billingService.findMany({
       where: { organizationId: ORG_ID, isActive: true },
       orderBy: [{ serviceCategory: 'asc' }, { serviceName: 'asc' }],

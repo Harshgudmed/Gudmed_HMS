@@ -1,4 +1,5 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 import { handleServiceError, makeError } from '../utils.js'
 import { recordStockChange } from '../stockService.js'
 
@@ -86,7 +87,7 @@ function normalizeRow(raw) {
 
 export async function importDrugs(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const createdById = req.user?.userId ?? null
     const mode = req.body?.mode === 'commit' ? 'commit' : 'validate'
     const rawRows = Array.isArray(req.body?.rows) ? req.body.rows : null

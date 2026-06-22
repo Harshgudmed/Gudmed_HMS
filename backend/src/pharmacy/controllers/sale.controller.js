@@ -1,4 +1,5 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 import { createSaleSchema } from '../validations/sale.validation.js'
 import { getPagination, paginationMeta, handleServiceError, makeError } from '../utils.js'
 import { recordStockChange, consumeFromBatches } from '../stockService.js'
@@ -7,7 +8,7 @@ const SORTABLE_FIELDS = ['saleDate', 'totalAmount', 'paymentStatus', 'createdAt'
 
 export async function list(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { startDate, endDate, patientId, paymentStatus, sortBy, sortOrder } = req.query
     const { page, limit, skip } = getPagination(req.query)
 
@@ -50,7 +51,7 @@ export async function list(req, res, next) {
 
 export async function getById(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const sale = await db.pharmacySale.findFirst({
       where: { id: req.params.id, organizationId: ORGANIZATION_ID },
       include: {
@@ -67,7 +68,7 @@ export async function getById(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = createSaleSchema.parse(req.body)
 
     const data = await db.$transaction(async (tx) => {

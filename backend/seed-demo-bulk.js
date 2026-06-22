@@ -116,8 +116,7 @@ async function seedAppointments(doctorIds, patients) {
             update: { appointmentDate: date, appointmentTime: time, doctorId, patientId: patient.id, status },
             create: {
               id, organizationId: ORG, patientId: patient.id, doctorId,
-              appointmentDate: date, appointmentTime: time, durationMinutes: 20,
-              appointmentType: rand(APPT_TYPES), status,
+              appointmentDate: date, appointmentTime: time, appointmentType: rand(APPT_TYPES), status,
               chiefComplaint: rand(COMPLAINTS), updatedAt: new Date(),
             },
           })

@@ -29,7 +29,7 @@ export function printAppointmentCard(apt, orgInfo) {
 <div><div class="label">Doctor</div><div class="value">${apt.doctor ? drName(apt.doctor.fullName) : "—"}</div></div>
 <div><div class="label">Type</div><div class="value" style="text-transform:capitalize">${(apt.appointmentType || "General").replace("_", " ")}</div></div>
 <div><div class="label">Status</div><div class="value" style="color:#15803d">${apt.status.replace("_", " ").toUpperCase()}</div></div>
-<div><div class="label">Duration</div><div class="value">${apt.durationMinutes} min</div></div>
+
 ${apt.consultationFee != null ? `<div><div class="label">Consultation Fee</div><div class="value" style="color:#1e3a5f">₹${Number(apt.consultationFee).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>` : ""}
 </div>
 ${apt.consultationFee != null ? `<div style="display:flex;justify-content:space-between;align-items:center;border:2px solid #15803d;border-radius:8px;padding:10px 16px;margin-bottom:16px;background:#f0fdf4"><span style="font-size:11pt;font-weight:bold;color:#15803d">CONSULTATION FEE</span><span style="font-size:18pt;font-weight:bold;color:#15803d">₹${Number(apt.consultationFee).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ""}

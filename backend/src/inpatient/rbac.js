@@ -48,6 +48,8 @@ const PERMS = {
   'order-start': ['lab_technician', 'radiology_technician', 'pharmacist', 'nurse'],
   'order-complete': ['lab_technician', 'radiology_technician', 'pharmacist', 'doctor', 'nurse'],
   'order-cancel': ['doctor'],
+  // Treatment Chart: nurses tick scheduled lab/imaging/procedure occurrences.
+  'order-task': ['nurse', 'lab_technician', 'radiology_technician'],
 
   // ── IPD Specialist Consultations ──
   // Any clinical role can request; only the consulting doctor updates notes/completes.

@@ -5,6 +5,20 @@
 // (the UI timeline). Auto-billing is wired per order type in 3B+.
 import { db } from '../config/db.js'
 
+const DRUG_FORMS = [
+  "Tablet",
+  "Capsule",
+  "Syrup",
+  "Injection",
+  "Cream",
+  "Ointment",
+  "Drops",
+  "Inhaler",
+  "Suppository",
+  "Solution",
+  "Suspension",
+];
+
 // Canonical state machine. `stamp` selects the <stamp>ById/<stamp>ByName/<stamp>At
 // columns to set on transition.
 const TRANSITIONS = {
@@ -30,6 +44,11 @@ export async function createOrder(organizationId, input, actor) {
   if (!admissionId || !orderType || !itemName || !serviceGroup) {
     throw err(400, 'IPD_ORDER_INVALID', 'admissionId, orderType, itemName and serviceGroup are required')
   }
+
+  if (input.route && !DRUG_FORMS.includes(input.route)) {
+    throw err(400, 'IPD_ORDER_INVALID', `Invalid route. Allowed values: ${DRUG_FORMS.join(', ')}`)
+  }
+
   const order = await db.clinicalOrder.create({
     data: {
       organizationId,

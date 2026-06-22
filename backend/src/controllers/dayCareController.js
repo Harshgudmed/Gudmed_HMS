@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 const patientSelect = { id: true, firstName: true, middleName: true, lastName: true, mrn: true, phonePrimary: true }
 
@@ -9,7 +10,7 @@ async function nextCaseNumber(orgId) {
 
 export async function getAll(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { search, status, startDate, endDate } = req.query
     const where = { organizationId: ORG_ID }
     if (status && status !== 'all') where.status = status
@@ -48,7 +49,7 @@ export async function getAll(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const {
       patientId, doctorId, procedure, admissionDate, dischargeTime,
       fee, paymentStatus, amountPaid, status, notes,
@@ -97,7 +98,7 @@ export async function create(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { id } = req.body
     if (!id) return res.status(400).json({ success: false, error: 'id is required' })
 

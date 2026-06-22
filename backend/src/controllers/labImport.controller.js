@@ -1,4 +1,5 @@
 import { importCatalog, keyed, str, num, int } from '../utils/catalogImport.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 // Bulk import of pathology / laboratory tests from Excel/CSV rows.
 // POST /laboratory/import  body: { rows:[...], mode:'validate'|'commit' }
@@ -24,7 +25,7 @@ function normalizeLabRow(raw) {
 
 export async function importTests(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const mode = req.body?.mode === 'commit' ? 'commit' : 'validate'
     const result = await importCatalog({
       model: 'labTest',

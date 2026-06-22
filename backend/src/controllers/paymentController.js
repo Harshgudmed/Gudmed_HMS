@@ -1,11 +1,12 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { createOrder, createPaymentLink, verifySignature, verifyWebhookSignature } from '../services/razorpayService.js'
 
 // ── POST /api/payments/create-order ─────────────────────────────────────────
 // Frontend calls this → gets orderId → opens Razorpay checkout
 export async function createRazorpayOrder(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { invoiceId, amount, patientName, description } = req.body
 
     if (!amount || amount <= 0)
@@ -35,7 +36,7 @@ export async function createRazorpayOrder(req, res, next) {
 // Called after successful payment to verify + mark invoice paid
 export async function verifyPayment(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, invoiceId } = req.body
 
     // 1. Verify signature
@@ -92,7 +93,7 @@ export async function verifyPayment(req, res, next) {
 // Creates a shareable payment link (for WhatsApp / SMS)
 export async function createLink(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { invoiceId, amount, patientName, phone, email, description } = req.body
 
     if (!amount || amount <= 0)
@@ -163,7 +164,7 @@ export async function handleWebhook(req, res) {
 // ── GET /api/payments/invoice/:invoiceId ────────────────────────────────────
 export async function getPaymentsByInvoice(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { invoiceId } = req.params
     const invoice = await db.invoice.findFirst({ where: { id: invoiceId, organizationId } })
     return res.json({ success: true, data: invoice })

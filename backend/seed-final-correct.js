@@ -250,8 +250,7 @@ async function seedFinal() {
           appointmentType: 'new_patient',
           status: 'completed',
           consultationFee: opdService.unitPrice,
-          durationMinutes: 30,
-        },
+          },
       }).catch(() => null)
 
       if (appointment) {

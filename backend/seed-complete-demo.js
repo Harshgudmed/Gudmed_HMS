@@ -162,8 +162,7 @@ async function seedComplete() {
           appointmentType: 'new_patient',
           status: 'completed',
           consultationFee: doctor.consultationFee,
-          durationMinutes: 30,
-        },
+          },
       })
 
       // Create invoice

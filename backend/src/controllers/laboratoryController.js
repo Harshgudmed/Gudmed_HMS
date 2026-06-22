@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { z } from 'zod'
 
 async function resolveRequestedById(organizationId) {
@@ -87,7 +88,7 @@ function todayRange() {
 
 export const getAll = async (req, res, next) => {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { resource, testCategory, status, priority, orderId } = req.query
 
     // Parse and validate pagination parameters
@@ -244,7 +245,7 @@ export const getAll = async (req, res, next) => {
 
 export const create = async (req, res, next) => {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { resource } = req.body
 
     if (resource === 'test') {

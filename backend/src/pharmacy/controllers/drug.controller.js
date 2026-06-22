@@ -1,4 +1,5 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 import { createDrugSchema, updateDrugSchema } from '../validations/drug.validation.js'
 import { getPagination, paginationMeta, handleServiceError, makeError } from '../utils.js'
 import { externalBarcodeLookup } from '../barcodeProvider.js'
@@ -29,7 +30,7 @@ async function assertBarcodeFree(organizationId, barcode, excludeId) {
 
 export async function list(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { search, category, sortBy, sortOrder } = req.query
     const { page, limit, skip } = getPagination(req.query)
 
@@ -77,7 +78,7 @@ export async function list(req, res, next) {
 // A miss is NOT an error — it is the "new medicine" path (found:false, HTTP 200).
 export async function lookupByBarcode(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const barcode = String(req.query.barcode || '').trim()
     if (!barcode) return res.json({ success: true, found: false })
 
@@ -130,7 +131,7 @@ export async function searchReference(req, res, next) {
 
 export async function getById(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const drug = await db.pharmacyDrug.findFirst({
       where: { id: req.params.id, organizationId: ORGANIZATION_ID },
       include: { batches: { orderBy: { expiryDate: 'asc' } } },
@@ -145,7 +146,7 @@ export async function getById(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = createDrugSchema.parse(req.body)
     // A blank barcode is stored as null (not "") so barcode-less drugs don't clash.
     if (!parsed.barcode?.trim()) parsed.barcode = null
@@ -162,7 +163,7 @@ export async function create(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = updateDrugSchema.parse(req.body)
     if ('barcode' in parsed && !parsed.barcode?.trim()) parsed.barcode = null
 
@@ -183,7 +184,7 @@ export async function update(req, res, next) {
 
 export async function remove(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const existing = await db.pharmacyDrug.findFirst({
       where: { id: req.params.id, organizationId: ORGANIZATION_ID },
     })

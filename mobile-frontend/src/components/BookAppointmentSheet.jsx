@@ -98,7 +98,7 @@ export default function BookAppointmentSheet({ brandColor = '#2E4168', doctor = 
       const res = await client.post('/appointments', {
         patientId: patient.id, doctorId,
         appointmentDate: new Date(date).toISOString(), appointmentTime: time,
-        durationMinutes: parseInt(duration) || 30, appointmentType: type, priority,
+        appointmentType: type, priority,
         // Fee is decided by the doctor's slabs on the backend — not sent from the form
         chiefComplaint: complaint || undefined,
         notes: notes || undefined,

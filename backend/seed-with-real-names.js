@@ -238,8 +238,7 @@ async function seedWithRealNames() {
           appointmentType: i % 3 === 0 ? 'follow_up' : 'new_patient',
           status: 'completed',
           consultationFee: doctor.consultationFee,
-          durationMinutes: 30,
-        },
+          },
       })
 
       const invoice = await db.invoice.create({

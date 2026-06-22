@@ -1,8 +1,9 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 export async function getAll(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { resource } = req.query
 
     let limit = parseInt(req.query.limit) || 10
@@ -154,7 +155,7 @@ export async function getAll(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { resource } = req.body
 
     if (resource === 'sale') {

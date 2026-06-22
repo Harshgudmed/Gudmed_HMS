@@ -1,8 +1,9 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 export async function getAll(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { search, place } = req.query
     const where = { organizationId: ORG_ID }
     if (place && place !== 'all') where.placeOfDeath = place
@@ -30,7 +31,7 @@ export async function getAll(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const {
       patientId, dateOfDeath, timeOfDeath, placeOfDeath, locationDetails,
       ageAtDeathYears, ageAtDeathMonths, ageAtDeathDays, sex, maritalStatus, occupation, address,

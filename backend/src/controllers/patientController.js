@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { z } from 'zod'
 
 // Doctors only see their own patients — those they have an appointment or consultation
@@ -80,7 +81,7 @@ const patientSchema = z.object({
 
 export async function getAll(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const search = req.query.search || ''
     const status = req.query.status || 'all'
     const limit = parseInt(req.query.limit || '50')
@@ -264,7 +265,7 @@ export async function getRecords(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const validatedData = patientSchema.parse(req.body)
 
     const patient = await db.patient.create({
@@ -346,7 +347,7 @@ export async function update(req, res, next) {
 
 export async function remove(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { id } = req.params
     await db.patient.delete({ where: { id, organizationId } })
     res.json({ success: true, message: "Patient deleted successfully" })

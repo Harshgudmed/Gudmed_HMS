@@ -105,6 +105,7 @@ model Organization {
   billCounters        BillCounter[]
   billPayments        BillPayment[]
   clinicalOrders      ClinicalOrder[]
+  orderTasks          OrderTask[]
 
   // Ambulance / Day Care / Insurance modules
   ambulanceTrips      AmbulanceTrip[]
@@ -201,6 +202,11 @@ model User {
   // IPD Specialist Consultations
   ipdConsultationsAsDoctor  IpdConsultation[] @relation("ConsultingDoctorIPD")
   ipdConsultationsRequested IpdConsultation[] @relation("ConsultationRequestedBy")
+
+  // IPD admissions where this user is the attending / admitting / discharge doctor
+  attendingAdmissions Admission[] @relation("AttendingDoctor")
+  admittingAdmissions Admission[] @relation("AdmittingDoctor")
+  dischargeAdmissions Admission[] @relation("DischargeDoctor")
 
   @@index([organizationId])
   @@index([role])
@@ -539,7 +545,6 @@ model Appointment {
   // Appointment Details
   appointmentDate DateTime
   appointmentTime String
-  durationMinutes Int      @default(30)
   appointmentType String? // new_patient, follow_up, emergency
   departmentId    String?
   priority        String  @default("normal") // normal, urgent
@@ -766,6 +771,12 @@ model Admission {
   patient      Patient      @relation(fields: [patientId], references: [id])
   bed          Bed?         @relation(fields: [bedId], references: [id])
 
+  // Doctor relations — were bare IDs (needed a manual name lookup); the relation
+  // lets Prisma resolve doctor names directly via `include`. Optional (no FK on delete).
+  attendingDoctor User? @relation("AttendingDoctor", fields: [attendingDoctorId], references: [id])
+  admittingDoctor User? @relation("AdmittingDoctor", fields: [admittingDoctorId], references: [id])
+  dischargeDoctor User? @relation("DischargeDoctor", fields: [dischargeDoctorId], references: [id])
+
   // Enterprise IPD children (FK-enforced; cascade on admission delete)
   occupancies               BedOccupancy[]
   ipdCharges                IpdCharge[]
@@ -778,6 +789,7 @@ model Admission {
   billPayments              BillPayment[]
   clinicalOrders            ClinicalOrder[]
   ipdConsultations          IpdConsultation[]
+  orderTasks                OrderTask[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -2415,7 +2427,7 @@ model ClinicalNote {
   id             String   @id @default(cuid())
   organizationId String
   admissionId    String
-  noteType       String // PROGRESS | NURSING | CONSULTANT | PROCEDURE | TRANSFER | DISCHARGE | DOCTOR | OBSERVATION
+  noteType       String // Nursing admission assessment | Shift handover note | Other notes
   body           String
   authorId       String?
   authorName     String?
@@ -2554,10 +2566,41 @@ model ClinicalOrder {
   organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   admission    Admission            @relation(fields: [admissionId], references: [id], onDelete: Restrict)
   events       ClinicalOrderEvent[]
+  tasks        OrderTask[]
 
   @@index([organizationId, admissionId, status])
   @@index([organizationId, orderType, status])
   @@index([admissionId])
+}
+
+/// One scheduled occurrence of a repeating order (e.g. ABG TDS x2d → 6 rows).
+/// Generated from ClinicalOrder.frequency + duration; the nurse ticks each one.
+model OrderTask {
+  id             String   @id @default(cuid())
+  organizationId String
+  admissionId    String
+  orderId        String
+
+  orderType   String // LAB | RADIOLOGY | PHARMACY | PROCEDURE (snapshot)
+  itemName    String // snapshot of test/drug name (survives order edits)
+  scheduledAt DateTime // exact date+time this occurrence is due
+
+  status      String    @default("DUE") // DUE | DONE | MISSED | HELD | SKIPPED
+  doneAt      DateTime?
+  doneById    String?
+  doneByName  String?
+  resultValue String? // optional reading / observation captured at the bedside
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  admission    Admission     @relation(fields: [admissionId], references: [id], onDelete: Restrict)
+  order        ClinicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, admissionId, scheduledAt])
+  @@index([orderId])
 }
 
 /// Append-only lifecycle timeline for an order (UI timeline; complements AuditLog).
@@ -2738,8 +2781,6 @@ model IpdConsultation {
   requestedById      String?
   departmentId       String?
 
-  // ChargeMaster.code to bill on completion (e.g. "CONSULT-ENT")
-  chargeItemCode     String?
 
   // Scheduling
   requestedAt  DateTime  @default(now())

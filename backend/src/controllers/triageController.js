@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { z } from 'zod'
 
 function generateQueueNumber(serviceArea) {
@@ -20,7 +21,7 @@ const queueSchema = z.object({
 // GET /api/triage  (reads queue data)
 export async function getQueue(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { serviceArea, status } = req.query
     const limit = parseInt(req.query.limit || '10')
     const offset = parseInt(req.query.offset || '0')
@@ -66,7 +67,7 @@ export async function getQueue(req, res, next) {
 // POST /api/triage  (adds patient to queue)
 export async function addToQueue(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const validatedData = queueSchema.parse(req.body)
 
     const queueItem = await db.queueManagement.create({

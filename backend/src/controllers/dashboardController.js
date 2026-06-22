@@ -1,9 +1,10 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { scopedDoctorId } from '../utils/scope.js'
 
 export async function getDashboard(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const today = new Date()
     const todayStart = new Date(today)
     todayStart.setHours(0, 0, 0, 0)

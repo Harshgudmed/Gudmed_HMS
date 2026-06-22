@@ -118,7 +118,6 @@ export default function RegisterPatientForm({ onSuccess, onCancel }) {
               ...(patientForm.department ? { departmentId: patientForm.department } : {}),
               appointmentDate: new Date(patientForm.appointmentDate).toISOString(),
               appointmentTime: patientForm.appointmentTime || '09:00',
-              durationMinutes: 30,
               appointmentType: TYPE_MAP[patientForm.appointmentType] || 'new_patient',
               priority: PRIORITY_MAP[patientForm.priority] || 'normal',
               ...(patientForm.notes.trim() ? { notes: patientForm.notes.trim() } : {}),

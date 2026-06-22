@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getOrgSettings } from '@/lib/orgSettings'
+import { cToF, fToC } from '@/lib/utils'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -120,7 +121,7 @@ function printSlip(s, orgInfo = { name: 'Hospital', address: '', phone: '', emai
   <div class="section">
     <div class="sec-title">Vital Signs</div>
     <div class="grid3">
-      ${vitalRow('Temperature',    s.temperature,          '°C',   isAbnormalTemp(s.temperature))}
+      ${vitalRow('Temperature',    cToF(s.temperature),    '°F',   isAbnormalTemp(s.temperature))}
       ${vitalRow('Pulse Rate',     s.pulseRate,            'bpm',  isAbnormalPulse(s.pulseRate))}
       ${vitalRow('SpO₂',          s.spo2,                 '%',    isAbnormalSpo2(s.spo2))}
       ${vitalRow('Resp. Rate',    s.respiratoryRate,       '/min', isAbnormalResp(s.respiratoryRate))}
@@ -239,7 +240,7 @@ function ViewDetailsDialog({ screening, onClose, onEdit, orgInfo = {} }) {
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Vital Signs</p>
             <div className="grid grid-cols-3 gap-2">
-              <VitalCard label="Temperature"  value={s.temperature}          unit="°C"   abnormal={isAbnormalTemp(s.temperature)} />
+              <VitalCard label="Temperature"  value={cToF(s.temperature)}    unit="°F"   abnormal={isAbnormalTemp(s.temperature)} />
               <VitalCard label="Pulse Rate"   value={s.pulseRate}            unit="bpm"  abnormal={isAbnormalPulse(s.pulseRate)} />
               <VitalCard label="SpO₂"         value={s.spo2}                 unit="%"    abnormal={isAbnormalSpo2(s.spo2)} />
               <VitalCard label="Resp. Rate"   value={s.respiratoryRate}      unit="/min" abnormal={isAbnormalResp(s.respiratoryRate)} />
@@ -440,7 +441,7 @@ export default function PreTriageModule() {
       firstName: s.firstName || '', lastName: s.lastName || '',
       age: s.age, gender: s.gender || 'male', phone: s.phone || '',
       chiefComplaint: s.chiefComplaint || '', briefHistory: s.briefHistory || '',
-      temperature: s.temperature, bloodPressureSystolic: s.bloodPressureSystolic,
+      temperature: cToF(s.temperature), bloodPressureSystolic: s.bloodPressureSystolic,
       bloodPressureDiastolic: s.bloodPressureDiastolic, pulseRate: s.pulseRate,
       respiratoryRate: s.respiratoryRate, spo2: s.spo2,
       weight: s.weight, height: s.height, bmi: s.bmi, fbs: s.fbs, ppbs: s.ppbs,
@@ -461,6 +462,7 @@ export default function PreTriageModule() {
     try {
       setIsSubmitting(true)
       const payload = { ...data }
+      if (data.temperature != null && data.temperature !== '') payload.temperature = fToC(data.temperature) // typed °F → store °C
       if (selectedPatient) payload.patientId = selectedPatient.id
 
       if (editingScreening) {
@@ -682,7 +684,7 @@ export default function PreTriageModule() {
                       <div className="flex items-center gap-1 flex-wrap">
                         <VitalBadge
                           icon={<Thermometer className="h-3 w-3 mr-0.5" />}
-                          value={s.temperature} unit="°C"
+                          value={cToF(s.temperature)} unit="°F"
                           abnormal={isAbnormalTemp(s.temperature)}
                         />
                         {(s.bloodPressureSystolic || s.bloodPressureDiastolic) && (
@@ -884,7 +886,7 @@ export default function PreTriageModule() {
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { name: 'temperature',          label: 'Temp (°C)',       placeholder: '36.5', step: '0.1' },
+                      { name: 'temperature',          label: 'Temp (°F)',       placeholder: '98.6', step: '0.1' },
                       { name: 'bloodPressureSystolic', label: 'BP Systolic',    placeholder: '120' },
                       { name: 'bloodPressureDiastolic',label: 'BP Diastolic',   placeholder: '80' },
                       { name: 'pulseRate',             label: 'Pulse (bpm)',    placeholder: '72' },

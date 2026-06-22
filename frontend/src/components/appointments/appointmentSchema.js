@@ -10,7 +10,6 @@ export const appointmentSchema = z.object({
   opdServiceId: z.string().optional(),
   appointmentDate: z.date(),
   appointmentTime: z.string().min(1, "Time is required"),
-  durationMinutes: z.number().min(15).max(120),
   appointmentType: z.enum(["new_patient", "follow_up", "emergency"]),
   priority: z.enum(["normal", "urgent"]),
   consultationFee: z.coerce.number().nonnegative().optional(),
@@ -21,7 +20,6 @@ export const editAppointmentSchema = z.object({
   doctorId: z.string().min(1, "Doctor is required"),
   appointmentDate: z.date(),
   appointmentTime: z.string().min(1, "Time is required"),
-  durationMinutes: z.number().min(15).max(120),
   appointmentType: z.enum(["new_patient", "follow_up", "emergency"]),
   priority: z.enum(["normal", "urgent"]),
   status: z.enum([

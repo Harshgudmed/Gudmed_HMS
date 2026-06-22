@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, differenceInDays } from 'date-fns'
+import { PatientTimeline } from '@/components/inpatient/PatientTimeline'
 import { getOrgSettings } from '@/lib/orgSettings'
 import { drName } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
   BedDouble, Plus, Edit, Trash2, Search, Eye, RefreshCw, ArrowRight, LogOut,
   AlertCircle, Printer, FileText, ClipboardList, IndianRupee, BarChart2,
-  Loader2, Activity, Stethoscope, UserPlus, Building2, User, ChevronLeft, ChevronRight
+  Loader2, Activity, Stethoscope, UserPlus, Building2, User, ChevronLeft, ChevronRight, History
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -25,9 +26,9 @@ import client from '@/api/client'
 import PatientLookup from '@/components/common/PatientLookup'
 import NursingStation from '@/components/inpatient/NursingStation'
 import NotesAndOrders from '@/components/inpatient/NotesAndOrders'
+import BillingWorkspace from '@/components/inpatient/BillingWorkspace'
 import BillScreen from '@/components/inpatient/BillScreen'
 import CollectionsReport from '@/components/inpatient/CollectionsReport'
-import ConsultationsTab from '@/components/inpatient/ConsultationsTab'
 
 function admissionLabel(a) {
   if (!a?.id) return '—'
@@ -61,7 +62,7 @@ const WARD_TYPES = ['General','Private','Semi-Private','ICU','NICU','PICU','CCU'
 const BED_TYPES = ['Standard','ICU','Ventilator','Burn Care','OT Table','Isolation','Bariatric']
 const ADMISSION_TYPES = ['Emergency','Elective','Transfer']
 const DISCHARGE_CONDITIONS = ['Improved','Recovered','Unchanged','Worsened','Deceased','Transferred']
-const NOTE_TYPES = ['Nursing','Doctor','Progress','Procedure','Observation']
+const NOTE_TYPES = ['Nursing admission assessment', 'Shift handover note', 'Other notes']
 
 function bedStatusBadge(status) {
   const map = { available:'bg-green-100 text-green-800', occupied:'bg-red-100 text-red-800', maintenance:'bg-yellow-100 text-yellow-800', reserved:'bg-blue-100 text-blue-800' }
@@ -121,7 +122,7 @@ export default function InpatientModule() {
 
   const [clinicalNotes, setClinicalNotes] = useState([])
   const [loadingNotes, setLoadingNotes] = useState(false)
-  const [noteForm, setNoteForm] = useState(emptyNote)
+  const [noteForm, setNoteForm] = useState({ text: '', type: 'Nursing admission assessment', bp: '', temp: '', pulse: '', spo2: '', weight: '' })
   const [savingNote, setSavingNote] = useState(false)
 
 
@@ -508,11 +509,11 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
     { value: 'dashboard', label: 'Dashboard' },
     { value: 'wards-beds', label: 'Wards & Beds' },
     { value: 'admissions', label: 'Admissions' },
-    { value: 'new-admission', label: 'New Admission' },
     { value: 'nursing', label: 'Nursing Station' },
     { value: 'notes-orders', label: 'Doctor Notes & Orders' },
     { value: 'discharge', label: 'Discharge' },
     { value: 'movement', label: 'Movement' },
+    { value: 'billing', label: 'IPD Billing' },
     { value: 'patient-history', label: 'Patient History' },
     { value: 'collections', label: 'Collections' },
   ]
@@ -537,29 +538,20 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
   const pendingDischarges = admissions.filter(a => (a.status || '').toLowerCase() === 'admitted' && a.expectedDischargeDate && new Date(a.expectedDischargeDate) <= new Date())
   const dischargedList = admissions.filter(a => (a.status || '').toLowerCase() === 'discharged')
 
-  // Transfers keep status='admitted'. Movement is tracked via 'WARD TRANSFER NOTE' in clinicalNotes JSON.
-  // Build a flat list of transfer events across all admissions.
-  const transferEventList = admissions.flatMap(a => {
-    let notes = []
-    try { notes = a.clinicalNotes ? JSON.parse(a.clinicalNotes) : [] } catch { notes = [] }
-    // Also handle array directly (some versions store as array)
-    if (!Array.isArray(notes)) notes = []
-    return notes
-      .filter(n => n && n.note && (
-        (typeof n.note === 'string' && n.note.includes('WARD TRANSFER NOTE')) ||
-        n.noteType === 'transfer'
-      ))
-      .map(n => ({
-        admissionId: a.id,
-        patient: a.patient,
-        currentWard: a.bed?.ward?.name || getWardName(wards, a),
-        currentBed: a.bed?.bedNumber || '—',
-        note: n.note || '',
-        date: n.date,
-        authorName: n.authorName || '—',
-        status: a.status,
-      }))
-  })
+  // Transfers keep status='admitted'. Movement comes from the backend `transferNotes`
+  // (ClinicalNote table, noteType='transfer') — no more JSON parsing on the client.
+  const transferEventList = admissions.flatMap(a =>
+    (a.transferNotes || []).map(n => ({
+      admissionId: a.id,
+      patient: a.patient,
+      currentWard: a.bed?.ward?.name || getWardName(wards, a),
+      currentBed: a.bed?.bedNumber || '—',
+      note: n.note || '',
+      date: n.date,
+      authorName: n.authorName || '—',
+      status: a.status,
+    }))
+  )
 
   // Legacy: also include admissions explicitly marked transferred
   const transferredList = admissions.filter(a => a.status === 'transferred')
@@ -575,13 +567,11 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
             <p className="text-xs text-gray-500">Ward and bed management, admissions, and patient tracking</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => { setActiveTab('new-admission'); setAdmitPatient(null); setAdmitForm(emptyAdmission); setAvailableBeds([]) }}>
+        <div className="flex gap-2 ">
+          <Button className="bg-blue-600 text-white hover:bg-blue-700 hover:text-white" size="sm" onClick={() => { setActiveTab('new-admission'); setAdmitPatient(null); setAdmitForm(emptyAdmission); setAvailableBeds([]) }}>
             <UserPlus className="h-4 w-4 mr-1" />New Admission
           </Button>
-          <Button size="sm" onClick={() => { setEditingWardId(null); setWardForm(emptyWard); setShowWardDialog(true) }}>
-            <Plus className="h-4 w-4 mr-1" />Add Ward
-          </Button>
+        
         </div>
       </div>
 
@@ -685,7 +675,9 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
                   <h2 className="text-base font-semibold flex items-center gap-2"><Building2 className="h-4 w-4" />Ward Overview</h2>
                   <p className="text-xs text-gray-500">Current status of all wards</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={fetchAll}><RefreshCw className="h-3.5 w-3.5 mr-1" />Print Census</Button>
+                  <Button size="sm" onClick={() => { setEditingWardId(null); setWardForm(emptyWard); setShowWardDialog(true) }}>
+            <Plus className="h-4 w-4 mr-1" />Add Ward
+          </Button>
               </div>
               <div className="grid grid-cols-4 gap-3">
                 {wards.map(w => {
@@ -702,7 +694,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
                         </div>
                         {(w.building || w.floor) && <p className="text-[11px] text-gray-400 mb-1.5 -mt-1">{[w.building, w.floor].filter(Boolean).join(' · ')}</p>}
                         <div className="space-y-1 text-sm">
-                          <div className="flex justify-between"><span className="text-gray-500">Capacity:</span><span className="font-medium">{w.capacity}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">Capacity:</span><span className="font-medium">{total}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">Occupied:</span><span className="font-medium text-red-500">{occ}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">Available:</span><span className="font-medium text-green-600">{total - occ}</span></div>
                         </div>
@@ -1458,6 +1450,14 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
           </div>
         )}
 
+        {/* ════════════════════ BILLING ════════════════════ */}
+        {activeTab === 'billing' && (
+          <BillingWorkspace 
+            admissions={currentAdmitted} 
+            orgInfo={orgInfo} 
+          />
+        )}
+
         {/* ════════════════════ PATIENT HISTORY ════════════════════ */}
         {activeTab === 'patient-history' && (
           <div>
@@ -1679,7 +1679,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
             </DialogTitle>
           </DialogHeader>
           <div className="flex border-b mb-4">
-            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'billing', label: 'IPD Billing', Icon: IndianRupee }, { id: 'consultations', label: 'Consultations', Icon: Stethoscope }].map(({ id, label, Icon }) => (
+            {[{ id: 'details', label: 'Details', Icon: FileText }, { id: 'notes', label: 'Clinical Notes', Icon: ClipboardList }, { id: 'timeline', label: 'Timeline Logs', Icon: History }, { id: 'billing', label: 'IPD Billing', Icon: IndianRupee }].map(({ id, label, Icon }) => (
               <button key={id} onClick={() => handleViewTabChange(id)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${viewTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 <Icon className="h-4 w-4" />{label}
@@ -1730,16 +1730,15 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
               </div>
             </div>
           )}
+          {viewAdmission && viewTab === 'timeline' && (
+            <div className="max-h-[60vh] overflow-y-auto">
+              <PatientTimeline patientId={viewAdmission.patientId} />
+            </div>
+          )}
           {viewAdmission && viewTab === 'billing' && (
             <BillScreen admission={viewAdmission} orgInfo={orgInfo} />
           )}
-          {viewAdmission && viewTab === 'consultations' && (
-            <ConsultationsTab
-              admission={viewAdmission}
-              doctors={doctors}
-              departments={departments}
-            />
-          )}
+
           <DialogFooter><Button variant="outline" onClick={() => setShowViewAdmission(false)}>Close</Button></DialogFooter>
         </DialogContent>
       </Dialog>

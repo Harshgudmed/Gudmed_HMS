@@ -14,15 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import client from '@/api/client'
 
-// Base charge items for consultation — server resolves actual price via tariff engine
-const CONSULT_ITEMS = [
-  { code: 'CONSULT-SPECIALIST', label: 'Specialist Consultation',    base: 500 },
-  { code: 'CONSULT-MED',        label: 'Medicine Consultation',      base: 500 },
-  { code: 'CONSULT-EYE',        label: 'Ophthalmology Consultation', base: 700 },
-  { code: 'CONSULT-ENT',        label: 'ENT Consultation',           base: 700 },
-  { code: 'CONSULT-ORTHO',      label: 'Orthopedics Consultation',   base: 800 },
-  { code: 'CONSULT-CARDIO',     label: 'Cardiology Consultation',    base: 1000 },
-]
+
 
 const inr = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`
 
@@ -43,8 +35,8 @@ const CARD_BORDER = {
 }
 
 const emptyForm = {
-  departmentId: '', consultingDoctorId: '',
-  chargeItemCode: '', referralReason: '', scheduledAt: '',
+  departmentId: 'all', consultingDoctorId: '',
+  referralReason: '', scheduledAt: '',
 }
 const emptyCompleteForm = { consultationNotes: '', diagnosis: '', recommendedPlan: '' }
 
@@ -74,15 +66,14 @@ export default function ConsultationsTab({ admission, doctors = [], departments 
   useEffect(() => { load() }, [load])
 
   // Filter doctors by selected department
-  const filteredDoctors = form.departmentId
+  const filteredDoctors = (form.departmentId && form.departmentId !== 'all')
     ? doctors.filter(d => d.departmentId === form.departmentId)
     : doctors
 
-  const selectedItem = CONSULT_ITEMS.find(i => i.code === form.chargeItemCode)
 
   const handleCreate = async () => {
-    if (!form.consultingDoctorId || !form.chargeItemCode || !form.referralReason.trim()) {
-      toast.error('Doctor, consultation type, and referral reason are required')
+    if (!form.consultingDoctorId || !form.referralReason.trim()) {
+      toast.error('Doctor and referral reason are required')
       return
     }
     setSaving(true)
@@ -91,8 +82,7 @@ export default function ConsultationsTab({ admission, doctors = [], departments 
         resource:          'ipd-consultation',
         admissionId,
         consultingDoctorId: form.consultingDoctorId,
-        departmentId:       form.departmentId || null,
-        chargeItemCode:     form.chargeItemCode,
+        departmentId:       form.departmentId === 'all' ? null : form.departmentId,
         referralReason:     form.referralReason,
         scheduledAt:        form.scheduledAt || null,
       })
@@ -202,9 +192,6 @@ export default function ConsultationsTab({ admission, doctors = [], departments 
                   {c.department.name}
                 </span>
               )}
-              {c.chargeItemCode && (
-                <span className="text-xs text-gray-400 font-mono">{c.chargeItemCode}</span>
-              )}
             </div>
             <span className="text-xs text-gray-400 shrink-0">
               {c.requestedAt ? format(new Date(c.requestedAt), 'dd MMM, h:mm a') : ''}
@@ -307,7 +294,7 @@ export default function ConsultationsTab({ admission, doctors = [], departments 
                     <SelectValue placeholder="All departments" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All departments</SelectItem>
+                    <SelectItem value="all">All departments</SelectItem>
                     {departments.map(d => (
                       <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                     ))}
@@ -337,28 +324,6 @@ export default function ConsultationsTab({ admission, doctors = [], departments 
               </div>
             </div>
 
-            <div>
-              <Label className="text-xs">Consultation Type *</Label>
-              <Select value={form.chargeItemCode}
-                onValueChange={v => setForm(p => ({ ...p, chargeItemCode: v }))}>
-                <SelectTrigger className="mt-1 h-9 text-sm">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONSULT_ITEMS.map(i => (
-                    <SelectItem key={i.code} value={i.code}>
-                      {i.label} — Base {inr(i.base)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedItem && (
-                <div className="mt-1.5 bg-blue-50 border border-blue-100 rounded px-2.5 py-1.5 text-xs text-blue-700 flex items-center gap-1">
-                  <IndianRupee className="h-3 w-3 shrink-0" />
-                  Base {inr(selectedItem.base)} · adjusted by room category · auto-posted on completion
-                </div>
-              )}
-            </div>
 
             <div>
               <Label className="text-xs">Referral Reason *</Label>

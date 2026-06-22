@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 function generateScreeningNumber() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
@@ -9,7 +10,7 @@ function generateScreeningNumber() {
 // GET /api/pre-triage
 export async function getAll(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { status = 'all' } = req.query
     const limit = parseInt(req.query.limit || '50')
     const offset = parseInt(req.query.offset || '0')
@@ -58,7 +59,7 @@ export async function getOne(req, res, next) {
 // POST /api/pre-triage
 export async function create(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const validatedData = req.validatedBody
     let data = { ...validatedData }
 
@@ -120,7 +121,7 @@ export async function update(req, res, next) {
 // POST /api/pre-triage/:id/convert  — convert screening to registered patient
 export async function convertToPatient(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const screening = await db.preTriage.findUnique({ where: { id: req.params.id } })
     if (!screening) return res.status(404).json({ success: false, error: 'Screening not found' })
 

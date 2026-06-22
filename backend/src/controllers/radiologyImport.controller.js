@@ -1,4 +1,5 @@
 import { importCatalog, keyed, str, num, int, bool } from '../utils/catalogImport.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 // Bulk import of radiology exams from Excel/CSV rows.
 // POST /radiology/import  body: { rows:[...], mode:'validate'|'commit' }
@@ -20,7 +21,7 @@ function normalizeRadRow(raw) {
 
 export async function importExams(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const mode = req.body?.mode === 'commit' ? 'commit' : 'validate'
     const result = await importCatalog({
       model: 'radiologyExam',

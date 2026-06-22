@@ -1,10 +1,11 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { startOfDay, endOfDay } from '../utils/dates.js'
 import { scopedDoctorId } from '../utils/scope.js'
 
 export async function getAll(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { date, status, doctorId, patientId } = req.query
     const limit = parseInt(req.query.limit || '50')
     const offset = parseInt(req.query.offset || '0')
@@ -53,7 +54,7 @@ export async function getAll(req, res, next) {
 
 export async function getOne(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { id } = req.params
 
     // Scope single-appointment reads to the doctor's own (others → 404 below).
@@ -82,7 +83,7 @@ export async function getOne(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const validatedData = req.validatedBody
 
     const apptDate = new Date(validatedData.appointmentDate)
@@ -162,7 +163,6 @@ export async function create(req, res, next) {
           doctorId: validatedData.doctorId,
           appointmentDate: apptDate,
           appointmentTime: validatedData.appointmentTime,
-          durationMinutes: validatedData.durationMinutes,
           appointmentType: validatedData.appointmentType,
           priority: validatedData.priority || 'normal',
           notes: validatedData.notes,
@@ -262,7 +262,7 @@ export async function create(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { id } = req.params
     const body = req.body
 
@@ -317,7 +317,7 @@ export async function update(req, res, next) {
 
 export async function remove(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { id } = req.params
 
     // Scope the delete to this org — deleteMany lets us filter on non-unique fields

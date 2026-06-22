@@ -27,7 +27,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import client from '@/api/client'
-import { drName } from '@/lib/utils'
+import { drName, cToF, fToC } from '@/lib/utils'
 import PatientLookup from '@/components/common/PatientLookup'
 
 const ICD10_CODES = [
@@ -46,7 +46,7 @@ const ICD10_CODES = [
 ]
 
 const vitalsSchema = z.object({
-  temperature: z.number().min(30).max(45).optional(),
+  temperature: z.number().min(86).max(113).optional(), // °F (≈30–45°C)
   bloodPressureSystolic: z.number().min(60).max(250).optional(),
   bloodPressureDiastolic: z.number().min(40).max(150).optional(),
   pulseRate: z.number().min(30).max(200).optional(),
@@ -71,7 +71,7 @@ const clinicalSchema = z.object({
 })
 
 const DEFAULT_VITALS = {
-  temperature: 37, bloodPressureSystolic: 120, bloodPressureDiastolic: 80,
+  temperature: 98.6, bloodPressureSystolic: 120, bloodPressureDiastolic: 80,
   pulseRate: 72, respiratoryRate: 16, weight: 70, height: 170, oxygenSaturation: 98,
 }
 
@@ -137,7 +137,7 @@ function printConsultation(consultation, patientName, patientMrn, patientAge, pa
 <div class="cell"><div class="lbl">Visit Type</div><div class="val" style="text-transform:capitalize">${consultation.visitType || 'Outpatient'}</div></div>
 </div></div>
 ${(consultation.temperature || consultation.pulseRate || consultation.bloodPressureSystolic) ? `<div class="pt-hdr" style="background:#1e3a5f;color:#fff;padding:3px 10px;font-size:9pt;font-weight:bold;text-transform:uppercase;margin-bottom:0">Vital Signs</div><div class="vitals-grid">
-${consultation.temperature ? `<div class="v-cell"><div class="v-num">${consultation.temperature}°</div><div class="v-unit">Celsius</div><div class="v-lbl">Temperature</div></div>` : ''}
+${consultation.temperature ? `<div class="v-cell"><div class="v-num">${cToF(consultation.temperature)}°</div><div class="v-unit">Fahrenheit</div><div class="v-lbl">Temperature</div></div>` : ''}
 ${consultation.bloodPressureSystolic ? `<div class="v-cell"><div class="v-num">${consultation.bloodPressureSystolic}/${consultation.bloodPressureDiastolic || '—'}</div><div class="v-unit">mmHg</div><div class="v-lbl">Blood Pressure</div></div>` : ''}
 ${consultation.pulseRate ? `<div class="v-cell"><div class="v-num">${consultation.pulseRate}</div><div class="v-unit">bpm</div><div class="v-lbl">Pulse Rate</div></div>` : ''}
 ${consultation.oxygenSaturation ? `<div class="v-cell"><div class="v-num">${consultation.oxygenSaturation}%</div><div class="v-unit">SpO₂</div><div class="v-lbl">Oxygen Sat.</div></div>` : ''}
@@ -371,7 +371,7 @@ export default function ConsultationModule() {
     } else { setRadiologyOrderItems([]) }
 
     vitalsForm.reset({
-      temperature: c.temperature ?? undefined,
+      temperature: cToF(c.temperature) ?? undefined, // stored °C → show °F in form
       bloodPressureSystolic: c.bloodPressureSystolic ?? undefined,
       bloodPressureDiastolic: c.bloodPressureDiastolic ?? undefined,
       pulseRate: c.pulseRate ?? undefined,
@@ -414,6 +414,7 @@ export default function ConsultationModule() {
         doctorId: selectedDoctorId,
         visitType: 'outpatient',
         ...vitals,
+        temperature: fToC(vitals.temperature) ?? undefined, // typed °F → store °C
         chiefComplaint: clinical.chiefComplaint,
         historyOfPresentIllness: clinical.historyOfPresentIllness,
         physicalExamination: clinical.physicalExamination,
@@ -634,7 +635,7 @@ export default function ConsultationModule() {
                               {(c.temperature || c.bloodPressureSystolic || c.pulseRate || c.oxygenSaturation || bmiNum || c.followUpDate) && (
                                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                                    {c.temperature && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5"><Thermometer className="h-3 w-3" />{c.temperature}°C</span>}
+                                    {c.temperature && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5"><Thermometer className="h-3 w-3" />{cToF(c.temperature)}°F</span>}
                                     {c.bloodPressureSystolic && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5"><Heart className="h-3 w-3" />{c.bloodPressureSystolic}/{c.bloodPressureDiastolic}</span>}
                                     {c.pulseRate && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5"><Activity className="h-3 w-3" />{c.pulseRate} bpm</span>}
                                     {c.oxygenSaturation && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5"><Droplet className="h-3 w-3" />{c.oxygenSaturation}%</span>}
@@ -736,7 +737,7 @@ export default function ConsultationModule() {
                       <p className="font-semibold text-gray-700 mb-2 uppercase text-xs tracking-wide">Vital Signs</p>
                       <div className="grid grid-cols-4 gap-2">
                         {[
-                          { label: 'Temp', value: c.temperature ? `${c.temperature}°C` : null },
+                          { label: 'Temp', value: c.temperature ? `${cToF(c.temperature)}°F` : null },
                           { label: 'BP', value: c.bloodPressureSystolic ? `${c.bloodPressureSystolic}/${c.bloodPressureDiastolic} mmHg` : null },
                           { label: 'Pulse', value: c.pulseRate ? `${c.pulseRate} bpm` : null },
                           { label: 'SpO₂', value: c.oxygenSaturation ? `${c.oxygenSaturation}%` : null },
@@ -952,7 +953,7 @@ export default function ConsultationModule() {
                 <form className="space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
-                      { name: 'temperature',           label: 'Temperature (°C)',   icon: <Thermometer className="h-4 w-4 text-red-500" />,    step: '0.1', parse: parseFloat },
+                      { name: 'temperature',           label: 'Temperature (°F)',   icon: <Thermometer className="h-4 w-4 text-red-500" />,    step: '0.1', parse: parseFloat },
                       { name: 'bloodPressureSystolic', label: 'BP Systolic (mmHg)', icon: <Heart className="h-4 w-4 text-red-500" />,          step: '1',   parse: parseInt },
                       { name: 'bloodPressureDiastolic',label: 'BP Diastolic (mmHg)',icon: <Heart className="h-4 w-4 text-red-400" />,          step: '1',   parse: parseInt },
                       { name: 'pulseRate',             label: 'Pulse Rate (bpm)',   icon: <Activity className="h-4 w-4 text-pink-500" />,      step: '1',   parse: parseInt },

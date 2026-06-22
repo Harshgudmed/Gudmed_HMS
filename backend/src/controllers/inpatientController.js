@@ -1,4 +1,5 @@
 import { db } from "../config/db.js";
+import { getOrgId, getActor, svcErr } from "../lib/reqContext.js";
 import { z } from "zod";
 import {
   resolvePrice,
@@ -30,8 +31,9 @@ import {
   listOrders,
   getOrder,
 } from "../inpatient/orderService.js";
-import { billProcedureOrder } from "../inpatient/orderBillingService.js";
+import { billAnyOrder, billOrderTask, cancelOrderTaskCharge } from "../inpatient/orderBillingService.js";
 import { billConsultation } from "../inpatient/consultationBillingService.js";
+import { generateTasksForOrder } from "../inpatient/scheduleService.js";
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 
@@ -120,613 +122,34 @@ function pick(obj, keys) {
 
 export async function getAll(req, res) {
   try {
-    const ORGANIZATION_ID =
-      req.organizationId || process.env.ORGANIZATION_ID || "org-demo";
-    const { resource, wardId, status } = req.query;
+    const context = buildListContext(req);
+    const { resource } = req.query;
 
-    // Parse and validate pagination parameters
-    let limit = parseInt(req.query.limit) || 10;
-    let offset = parseInt(req.query.offset) || 0;
-    limit = Math.max(1, Math.min(limit, 1000));
-    offset = Math.max(0, offset);
-
-    if (resource === "wards") {
-      const wards = await db.ward.findMany({
-        where: { organizationId: ORGANIZATION_ID, isActive: true },
-        include: {
-          beds: true,
-          department: { select: { id: true, name: true } },
-        },
-      });
-
-      const result = wards.map((ward) => {
-        const occupiedBeds = ward.beds.filter(
-          (b) => b.status === "occupied",
-        ).length;
-        return {
-          ...ward,
-          occupiedBeds,
-          availableBeds: (ward.capacity ?? ward.beds.length) - occupiedBeds,
-          occupancyRate:
-            ward.capacity && ward.capacity > 0
-              ? Math.round((occupiedBeds / ward.capacity) * 100)
-              : 0,
-        };
-      });
-
-      return res.json({ success: true, data: result });
-    }
-
-    if (resource === "beds") {
-      const where = { organizationId: ORGANIZATION_ID };
-      if (wardId) where.wardId = wardId;
-      if (status) where.status = status;
-
-      const beds = await db.bed.findMany({
-        where,
-        include: { ward: true },
-      });
-
-      return res.json({ success: true, data: beds });
-    }
-
-    if (resource === "admissions") {
-      const where = { organizationId: ORGANIZATION_ID };
-      if (status) where.status = status;
-      // Doctor portal: `mine=true` limits to the logged-in doctor's own patients
-      // (attending or admitting). Scopes "see only my patients" without new endpoints.
-      if (req.query.mine === "true" && req.user?.id) {
-        where.OR = [
-          { attendingDoctorId: req.user.id },
-          { admittingDoctorId: req.user.id },
-        ];
-      }
-
-      const [admissions, total] = await Promise.all([
-        db.admission.findMany({
-          where,
-          include: {
-            patient: {
-              select: {
-                id: true,
-                mrn: true,
-                firstName: true,
-                lastName: true,
-                gender: true,
-                dateOfBirth: true,
-                phonePrimary: true,
-              },
-            },
-            bed: {
-              include: {
-                ward: {
-                  include: { department: { select: { id: true, name: true } } },
-                },
-              },
-            },
-          },
-          orderBy: { admissionDate: "desc" },
-          take: limit,
-          skip: offset,
-        }),
-        db.admission.count({ where }),
-      ]);
-
-      // Resolve admitting/attending doctor names (stored as bare user IDs)
-      const doctorIds = [
-        ...new Set(
-          admissions
-            .flatMap((a) => [a.attendingDoctorId, a.admittingDoctorId])
-            .filter(Boolean),
-        ),
-      ];
-      const doctorUsers = doctorIds.length
-        ? await db.user.findMany({
-            where: { id: { in: doctorIds } },
-            select: { id: true, fullName: true },
-          })
-        : [];
-      const doctorName = Object.fromEntries(
-        doctorUsers.map((d) => [d.id, d.fullName]),
-      );
-
-      // Bill summary per admission (from Bill table — replaces legacy Admission.totalBillAmount).
-      // Prefer the latest FINAL bill; fall back to the latest bill of any status.
-      const admIds = admissions.map((a) => a.id);
-      const bills = admIds.length
-        ? await db.bill.findMany({
-            where: {
-              organizationId: ORGANIZATION_ID,
-              admissionId: { in: admIds },
-            },
-            orderBy: { createdAt: "desc" },
-            select: {
-              admissionId: true,
-              billNumber: true,
-              status: true,
-              billType: true,
-              payableTotal: true,
-              finalizedAt: true,
-            },
-          })
-        : [];
-      const billByAdm = {};
-      for (const b of bills) {
-        const cur = billByAdm[b.admissionId];
-        if (!cur) billByAdm[b.admissionId] = b;
-        else if (cur.status !== "FINAL" && b.status === "FINAL")
-          billByAdm[b.admissionId] = b;
-      }
-
-      const data = admissions.map((a) => ({
-        ...a,
-        attendingDoctorName: doctorName[a.attendingDoctorId] || null,
-        admittingDoctorName: doctorName[a.admittingDoctorId] || null,
-        billSummary: billByAdm[a.id] || null,
-      }));
-
-      const hasMore = offset + limit < total;
-      const page = Math.floor(offset / limit) + 1;
-      const totalPages = Math.ceil(total / limit);
-
-      return res.json({
-        success: true,
-        data,
-        meta: { total, limit, offset, page, totalPages, hasMore },
-      });
-    }
-
-    if (resource === "notes") {
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const admission = await db.admission.findUnique({
-        where: { id: admissionId },
-        select: { clinicalNotes: true },
-      });
-      if (!admission)
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      let notes = [];
-      try {
-        notes = admission.clinicalNotes
-          ? JSON.parse(admission.clinicalNotes)
-          : [];
-      } catch {
-        notes = [];
-      }
-      const mapped = notes.map((n) => ({
-        id: n.id,
-        type: n.noteType || "Note",
-        text: n.note,
-        createdAt: n.date,
-        vitals: n.vitals || null,
-      }));
-      return res.json({ success: true, data: mapped });
-    }
-
-    // @deprecated LEGACY IPD billing (reads Admission.totalBillAmount/billGenerated/additionalCharges).
-    // Desktop uses Bill/IpdCharge (resource: 'bill'). Retained only for the legacy mobile app.
-    if (resource === "billing") {
-      console.warn(
-        "[DEPRECATED] inpatient GET resource=billing — use resource=bill (Bill/IpdCharge)",
-      );
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const admission = await db.admission.findUnique({
-        where: { id: admissionId },
-        select: {
-          dailyRoomRate: true,
-          totalBillAmount: true,
-          billGenerated: true,
-          additionalCharges: true,
-        },
-      });
-      if (!admission)
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      if (!admission.billGenerated)
-        return res.json({ success: true, data: null });
-      let charges = [];
-      try {
-        charges = admission.additionalCharges
-          ? JSON.parse(admission.additionalCharges)
-          : [];
-      } catch {
-        charges = [];
-      }
-      return res.json({
-        success: true,
-        data: {
-          id: admissionId,
-          dailyRate: admission.dailyRoomRate,
-          totalBillAmount: admission.totalBillAmount,
-          billGenerated: admission.billGenerated,
-          charges,
-        },
-      });
-    }
-
-    if (resource === "stats") {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date();
-      todayEnd.setHours(23, 59, 59, 999);
-
-      const [totalBeds, occupiedBeds, todayAdmissions, todayDischarges] =
-        await Promise.all([
-          db.bed.count({ where: { organizationId: ORGANIZATION_ID } }),
-          db.bed.count({
-            where: { organizationId: ORGANIZATION_ID, status: "occupied" },
-          }),
-          db.admission.count({
-            where: {
-              organizationId: ORGANIZATION_ID,
-              status: "admitted",
-              admissionDate: { gte: todayStart, lte: todayEnd },
-            },
-          }),
-          db.admission.count({
-            where: {
-              organizationId: ORGANIZATION_ID,
-              status: "discharged",
-              dischargeDate: { gte: todayStart, lte: todayEnd },
-            },
-          }),
-        ]);
-
-      const availableBeds = totalBeds - occupiedBeds;
-      const occupancyRate =
-        totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
-
-      return res.json({
-        success: true,
-        data: {
-          totalBeds,
-          occupiedBeds,
-          availableBeds,
-          todayAdmissions,
-          todayDischarges,
-          occupancyRate,
-        },
-      });
-    }
-
-    // ── Enterprise tariff engine ────────────────────────────────────────────
-    if (resource === "tariff-preview") {
-      const { admissionId, itemCode, base, serviceGroup, serviceDate } =
-        req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
-        admissionId,
-      );
-      if (!admissionBelongsToOrg) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      }
-      try {
-        const result = await resolvePrice(ORGANIZATION_ID, admissionId, {
-          itemCode,
-          base: base !== undefined ? Number(base) : undefined,
-          serviceGroup,
-          serviceDate,
-        });
-        return res.json({ success: true, data: result });
-      } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, error: e.message });
-      }
-    }
-
-    if (resource === "running-bill") {
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
-        admissionId,
-      );
-      if (!admissionBelongsToOrg) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      }
-      try {
-        const bill = await computeRunningBill(ORGANIZATION_ID, admissionId);
-        return res.json({ success: true, data: bill });
-      } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, error: e.message });
-      }
-    }
-
-    // Hidden dynamic pharmacy pricing — auto-pop the final price for a drug.
-    // Normal users get only the final numbers; admins additionally get the breakdown.
-    if (resource === "pharmacy-price") {
-      const { admissionId, drugId, quantity } = req.query;
-      if (!admissionId || !drugId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId and drugId required" });
-      const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
-        admissionId,
-      );
-      if (!admissionBelongsToOrg) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      }
-      try {
-        const r = await priceForPharmacyItem(
-          ORGANIZATION_ID,
-          admissionId,
-          drugId,
-          { quantity },
-        );
-        const isAdmin =
-          req.user?.role === "admin" || req.user?.role === "super_admin";
-        const { breakdown, ...visible } = r;
-        // Role-based visibility: breakdown (base price, markup rule, plan) admins only.
-        return res.json({ success: true, data: isAdmin ? r : visible });
-      } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, error: e.message });
-      }
-    }
-
-    // Phase 1: the persisted bill (current open DRAFT, else latest) + frozen line items.
-    if (resource === "bill") {
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
-        admissionId,
-      );
-      if (!admissionBelongsToOrg) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      }
-      const bill = await getCurrentBill(ORGANIZATION_ID, admissionId);
-      const allBills = await db.bill.findMany({
-        where: { organizationId: ORGANIZATION_ID, admissionId },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          billNumber: true,
-          status: true,
-          billType: true,
-          payableTotal: true,
-          finalizedAt: true,
-          createdAt: true,
-        },
-      });
-      return res.json({ success: true, data: bill, history: allBills });
-    }
-
-    // Phase 2: payment ledger for a bill (or whole admission via floating payments)
-    if (resource === "payments") {
-      const { billId, admissionId } = req.query;
-      if (!billId && !admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "billId or admissionId required" });
-      const where = { organizationId: ORGANIZATION_ID };
-      if (billId) where.billId = billId;
-      if (admissionId) {
-        where.admissionId = admissionId;
-        const admissionBelongsToOrg = await ownedAdmission(
-          ORGANIZATION_ID,
-          admissionId,
-        );
-        if (!admissionBelongsToOrg) {
-          return res
-            .status(404)
-            .json({ success: false, error: "Admission not found" });
-        }
-      }
-      const rows = await db.billPayment.findMany({
-        where,
-        orderBy: { paidAt: "desc" },
-      });
-      return res.json({ success: true, data: rows });
-    }
-
-    // Phase 2: cashier daily/shift collection report
-    if (resource === "collections") {
-      const { from, to, cashierId } = req.query;
-      const report = await collections(ORGANIZATION_ID, {
-        from,
-        to,
-        cashierId,
-      });
-      return res.json({ success: true, data: report });
-    }
-
-    if (resource === "bed-categories") {
-      const cats = await db.bedCategory.findMany({
-        where: { organizationId: ORGANIZATION_ID, isActive: true },
-        orderBy: { rank: "asc" },
-      });
-      return res.json({ success: true, data: cats });
-    }
-
-    if (resource === "tariff-plans") {
-      const plans = await db.tariffPlan.findMany({
-        where: { organizationId: ORGANIZATION_ID, isActive: true },
-        orderBy: { createdAt: "asc" },
-      });
-      return res.json({ success: true, data: plans });
-    }
-
-    // ── Phase 2: Nursing station ─────────────────────────────────────────────
-    // Clinical time-series: never silently truncate — paginate with a generous cap.
-    const clinLimit = Math.min(parseInt(req.query.limit) || 200, 1000);
-    const clinOffset = Math.max(0, parseInt(req.query.offset) || 0);
-
-    if (resource === "vitals") {
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const [vitals, total] = await Promise.all([
-        db.vitalsRecord.findMany({
-          where: { organizationId: ORGANIZATION_ID, admissionId },
-          orderBy: { recordedAt: "desc" },
-          take: clinLimit,
-          skip: clinOffset,
-        }),
-        db.vitalsRecord.count({
-          where: { organizationId: ORGANIZATION_ID, admissionId },
-        }),
-      ]);
-      return res.json({
-        success: true,
-        data: vitals,
-        meta: {
-          total,
-          limit: clinLimit,
-          offset: clinOffset,
-          hasMore: clinOffset + clinLimit < total,
-        },
-      });
-    }
-
-    if (resource === "clinical-notes-v2") {
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const [notes, total] = await Promise.all([
-        db.clinicalNote.findMany({
-          where: { organizationId: ORGANIZATION_ID, admissionId },
-          orderBy: { authoredAt: "desc" },
-          take: clinLimit,
-          skip: clinOffset,
-        }),
-        db.clinicalNote.count({
-          where: { organizationId: ORGANIZATION_ID, admissionId },
-        }),
-      ]);
-      return res.json({
-        success: true,
-        data: notes,
-        meta: {
-          total,
-          limit: clinLimit,
-          offset: clinOffset,
-          hasMore: clinOffset + clinLimit < total,
-        },
-      });
-    }
-
-    if (resource === "medication-administration") {
-      const { admissionId } = req.query;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const [records, total] = await Promise.all([
-        db.medicationAdministration.findMany({
-          where: { organizationId: ORGANIZATION_ID, admissionId },
-          orderBy: [{ scheduledAt: "desc" }, { createdAt: "desc" }],
-          take: clinLimit,
-          skip: clinOffset,
-        }),
-        db.medicationAdministration.count({
-          where: { organizationId: ORGANIZATION_ID, admissionId },
-        }),
-      ]);
-      return res.json({
-        success: true,
-        data: records,
-        meta: {
-          total,
-          limit: clinLimit,
-          offset: clinOffset,
-          hasMore: clinOffset + clinLimit < total,
-        },
-      });
-    }
-
-    // ── Phase 3A: Clinical Orders (reads; ungated like other IPD reads) ──
-    if (resource === "orderables") {
-      const data = await orderableSearch.search(ORGANIZATION_ID, {
-        q: req.query.q,
-        type: req.query.type,
-      });
-      return res.json({ success: true, data });
-    }
-    if (resource === "orders") {
-      const data = await listOrders(ORGANIZATION_ID, {
-        admissionId: req.query.admissionId,
-        type: req.query.type,
-        status: req.query.status,
-      });
-      return res.json({ success: true, data });
-    }
-    if (resource === "order") {
-      if (!req.query.id)
-        return res.status(400).json({ success: false, error: "id required" });
-      const data = await getOrder(ORGANIZATION_ID, req.query.id);
-      return res.json({ success: true, data });
-    }
-    if (resource === "order-worklist") {
-      const data = await listOrders(ORGANIZATION_ID, {
-        type: req.query.type,
-        status: req.query.status,
-        withContext: true,
-      });
-      return res.json({ success: true, data });
-    }
-
-    // ── ipd-consultation GET ──────────────────────────────────────────────────
-    if (resource === "ipd-consultation") {
-      const where = { organizationId: ORGANIZATION_ID };
-      if (req.query.admissionId) where.admissionId = req.query.admissionId;
-      if (req.query.status)      where.status      = req.query.status;
-      // Doctor portal: mine=true → consultations assigned to me OR requested by me
-      if (req.query.mine === "true" && req.user?.id) {
-        where.OR = [
-          { consultingDoctorId: req.user.id },
-          { requestedById:      req.user.id },
-        ];
-      }
-      const consultations = await db.ipdConsultation.findMany({
-        where,
-        include: {
-          consultingDoctor: { select: { id: true, fullName: true } },
-          requestedBy:      { select: { id: true, fullName: true } },
-          department:       { select: { id: true, name: true } },
-          ipdCharge:        { select: { id: true, lineTotal: true, status: true } },
-        },
-        orderBy: { requestedAt: "desc" },
-      });
-      return res.json({ success: true, data: consultations });
-    }
+    // Each resource → its own small, readable handler (defined below).
+    // NOTE: these `resource` names are the public API contract the frontend
+    // calls with — they must NOT change. Only internal handler names are new.
+    if (resource === "wards")                     return await getWards(req, res, context);
+    if (resource === "beds")                      return await getBeds(req, res, context);
+    if (resource === "admissions")                return await getAdmissions(req, res, context);
+    if (resource === "notes")                     return await getClinicalNotesLegacy(req, res, context);
+    if (resource === "stats")                     return await getStats(req, res, context);
+    if (resource === "tariff-preview")            return await getTariffPreview(req, res, context);
+    if (resource === "running-bill")              return await getRunningBill(req, res, context);
+    if (resource === "pharmacy-price")            return await getPharmacyPrice(req, res, context);
+    if (resource === "bill")                      return await getBill(req, res, context);
+    if (resource === "payments")                  return await getPayments(req, res, context);
+    if (resource === "collections")               return await getCollections(req, res, context);
+    if (resource === "bed-categories")            return await getBedCategories(req, res, context);
+    if (resource === "tariff-plans")              return await getTariffPlans(req, res, context);
+    if (resource === "vitals")                    return await getVitals(req, res, context);
+    if (resource === "clinical-notes-v2")         return await getClinicalNotesV2(req, res, context);
+    if (resource === "medication-administration") return await getMedicationAdministration(req, res, context);
+    if (resource === "order-tasks")               return await getOrderTasks(req, res, context);
+    if (resource === "orderables")                return await getOrderables(req, res, context);
+    if (resource === "orders")                    return await getOrders(req, res, context);
+    if (resource === "order")                     return await getOrderById(req, res, context);
+    if (resource === "order-worklist")            return await getOrderWorklist(req, res, context);
+    if (resource === "ipd-consultation")          return await getIpdConsultations(req, res, context);
 
     return res
       .status(400)
@@ -734,7 +157,6 @@ export async function getAll(req, res) {
         error:
           "Invalid resource. Use: wards, beds, admissions, notes, billing, stats, tariff-preview, running-bill, bed-categories, tariff-plans, orderables, orders, order, order-worklist, ipd-consultation",
       });
-
   } catch (err) {
     console.error("inpatient getAll error:", err);
     if (err?.status)
@@ -745,12 +167,551 @@ export async function getAll(req, res) {
   }
 }
 
+// ─── getAll helpers ─────────────────────────────────────────────────────────
+// These split the (formerly 640-line) getAll into one small dispatcher above
+// plus one focused handler per resource. Behaviour and JSON responses are
+// identical to before — only the structure changed.
+
+/**
+ * Shared read-context for every inpatient list endpoint.
+ *  - orgId               : current organization (tenant isolation)
+ *  - limit/offset        : general lists (admissions) — capped 1..1000
+ *  - clinLimit/clinOffset: clinical time-series (vitals/notes/meds) — bigger cap
+ */
+function buildListContext(req) {
+  const orgId = getOrgId(req);
+
+  let limit = parseInt(req.query.limit) || 10;
+  let offset = parseInt(req.query.offset) || 0;
+  limit = Math.max(1, Math.min(limit, 1000));
+  offset = Math.max(0, offset);
+
+  // Clinical time-series: never silently truncate — paginate with a generous cap.
+  const clinLimit = Math.min(parseInt(req.query.limit) || 200, 1000);
+  const clinOffset = Math.max(0, parseInt(req.query.offset) || 0);
+
+  return { orgId, limit, offset, clinLimit, clinOffset };
+}
+
+/**
+ * Latest bill per admission → { [admissionId]: bill }.
+ * Prefer the latest FINAL bill; fall back to the latest bill of any status.
+ */
+async function buildBillSummaryMap(orgId, admissions) {
+  const admissionIds = admissions.map((admission) => admission.id);
+  if (!admissionIds.length) return {};
+  const bills = await db.bill.findMany({
+    where: { organizationId: orgId, admissionId: { in: admissionIds } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      admissionId: true,
+      billNumber: true,
+      status: true,
+      billType: true,
+      payableTotal: true,
+      finalizedAt: true,
+    },
+  });
+  // Har admission ke liye sabse sahi bill chuno:
+  // pehla (newest) rakho, par koi FINAL mile to usko upgrade kar do.
+  const billByAdmission = {};
+  for (const bill of bills) {
+    const best = billByAdmission[bill.admissionId];
+
+    const noBillYet = !best;
+    const upgradeToFinal =
+      best && best.status !== "FINAL" && bill.status === "FINAL";
+
+    if (noBillYet || upgradeToFinal) {
+      billByAdmission[bill.admissionId] = bill;
+    }
+  }
+  return billByAdmission;
+}
+
+/**
+ * Transfer (ward-movement) notes per admission → { [admissionId]: [{ note, date, authorName }] }.
+ * Reads the ClinicalNote table (noteType='transfer') in one batched query.
+ */
+async function buildTransferNotesMap(orgId, admissions) {
+  const admissionIds = admissions.map((a) => a.id);
+  if (!admissionIds.length) return {};
+  const rows = await db.clinicalNote.findMany({
+    where: {
+      organizationId: orgId,
+      admissionId: { in: admissionIds },
+      noteType: "transfer",
+    },
+    orderBy: { authoredAt: "asc" },
+    select: { admissionId: true, body: true, authorName: true, authoredAt: true },
+  });
+  const map = {};
+  for (const r of rows) {
+    (map[r.admissionId] ||= []).push({
+      note: r.body,
+      date: r.authoredAt,
+      authorName: r.authorName || "—",
+    });
+  }
+  return map;
+}
+
+// Ward capacity cards — Capacity/Occupied/Available/Occupancy% per ward (dashboard).
+async function getWards(req, res, context) {
+  const wards = await db.ward.findMany({
+    where: { organizationId: context.orgId, isActive: true },
+    include: {
+      beds: true,
+      department: { select: { id: true, name: true } },
+    },
+  });
+
+  // Numbers ACTUAL bed records se nikalo (single source of truth) — taaki
+  // capacity field aur asli beds kabhi mismatch karein, tab bhi
+  // Capacity/Occupied/Available hamesha aapas me consistent rahein.
+  const data = wards.map((ward) => {
+    const totalBeds = ward.beds.length || ward.capacity || 0;
+    const occupiedBeds = ward.beds.filter((b) => b.status === "occupied").length;
+    return {
+      ...ward,
+      totalBeds,
+      occupiedBeds,
+      availableBeds: totalBeds - occupiedBeds,
+      occupancyRate:
+        totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
+    };
+  });
+
+  return res.json({ success: true, data });
+}
+
+async function getBeds(req, res, context) {
+  const { wardId, status } = req.query;
+  const where = { organizationId: context.orgId };
+  if (wardId) where.wardId = wardId;
+  if (status) where.status = status;
+
+  const beds = await db.bed.findMany({ where, include: { ward: true } });
+  return res.json({ success: true, data: beds });
+}
+
+async function getAdmissions(req, res, context) {
+  const { orgId, limit, offset } = context;
+  const { status } = req.query;
+
+  const where = { organizationId: orgId };
+  if (status) where.status = status;
+  // Doctor portal: `mine=true` limits to the logged-in doctor's own patients
+  // (attending or admitting). Scopes "see only my patients" without new endpoints.
+  if (req.query.mine === "true" && req.user?.id) {
+    where.OR = [
+      { attendingDoctorId: req.user.id },
+      { admittingDoctorId: req.user.id },
+    ];
+  }
+
+  const [admissions, total] = await Promise.all([
+    db.admission.findMany({
+      where,
+      include: {
+        patient: {
+          select: {
+            id: true,
+            mrn: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            phonePrimary: true,
+          },
+        },
+        bed: {
+          include: {
+            ward: {
+              include: { department: { select: { id: true, name: true } } },
+            },
+          },
+        },
+        // Doctor names come straight from the relation now (no manual lookup).
+        attendingDoctor: { select: { id: true, fullName: true } },
+        admittingDoctor: { select: { id: true, fullName: true } },
+      },
+      orderBy: { admissionDate: "desc" },
+      take: limit,
+      skip: offset,
+    }),
+    db.admission.count({ where }),
+  ]);
+
+  const billByAdm = await buildBillSummaryMap(orgId, admissions);
+  const transfersByAdm = await buildTransferNotesMap(orgId, admissions);
+
+  // Pull the relation objects OUT of the spread so the response shape stays
+  // EXACTLY as before — only attendingDoctorName/admittingDoctorName are exposed.
+  // transferNotes (from the ClinicalNote table) powers the Movement tab.
+  const data = admissions.map(({ attendingDoctor, admittingDoctor, ...a }) => ({
+    ...a,
+    attendingDoctorName: attendingDoctor?.fullName || null,
+    admittingDoctorName: admittingDoctor?.fullName || null,
+    billSummary: billByAdm[a.id] || null,
+    transferNotes: transfersByAdm[a.id] || [],
+  }));
+
+  const hasMore = offset + limit < total;
+  const page = Math.floor(offset / limit) + 1;
+  const totalPages = Math.ceil(total / limit);
+
+  return res.json({
+    success: true,
+    data,
+    meta: { total, limit, offset, page, totalPages, hasMore },
+  });
+}
+
+async function getClinicalNotesLegacy(req, res, context) {
+  const { admissionId } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  // All notes (incl. backfilled history + transfers) now live in the ClinicalNote table.
+  const rows = await db.clinicalNote.findMany({
+    where: { admissionId, organizationId: context.orgId },
+    orderBy: { authoredAt: "asc" },
+  });
+  const data = rows.map((n) => ({
+    id: n.id,
+    type: n.noteType || "Note",
+    text: n.body,
+    createdAt: n.authoredAt,
+    vitals: n.vitals || null,
+  }));
+  return res.json({ success: true, data });
+}
+
+async function getStats(req, res, context) {
+  const { orgId } = context;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const [totalBeds, occupiedBeds, todayAdmissions, todayDischarges] =
+    await Promise.all([
+      db.bed.count({ where: { organizationId: orgId } }),
+      db.bed.count({
+        where: { organizationId: orgId, status: "occupied" },
+      }),
+      db.admission.count({
+        where: {
+          organizationId: orgId,
+          status: "admitted",
+          admissionDate: { gte: todayStart, lte: todayEnd },
+        },
+      }),
+      db.admission.count({
+        where: {
+          organizationId: orgId,
+          status: "discharged",
+          dischargeDate: { gte: todayStart, lte: todayEnd },
+        },
+      }),
+    ]);
+
+  const availableBeds = totalBeds - occupiedBeds;
+  const occupancyRate =
+    totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+
+  return res.json({
+    success: true,
+    data: {
+      totalBeds,
+      occupiedBeds,
+      availableBeds,
+      todayAdmissions,
+      todayDischarges,
+      occupancyRate,
+    },
+  });
+}
+
+// ── Enterprise tariff engine ────────────────────────────────────────────
+async function getTariffPreview(req, res, context) {
+  const { orgId } = context;
+  const { admissionId, itemCode, base, serviceGroup, serviceDate } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  if (!(await ownedAdmission(orgId, admissionId)))
+    return res
+      .status(404)
+      .json({ success: false, error: "Admission not found" });
+  try {
+    const result = await resolvePrice(orgId, admissionId, {
+      itemCode,
+      base: base !== undefined ? Number(base) : undefined,
+      serviceGroup,
+      serviceDate,
+    });
+    return res.json({ success: true, data: result });
+  } catch (e) {
+    return res
+      .status(e.status || 500)
+      .json({ success: false, error: e.message });
+  }
+}
+
+async function getRunningBill(req, res, context) {
+  const { orgId } = context;
+  const { admissionId } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  if (!(await ownedAdmission(orgId, admissionId)))
+    return res
+      .status(404)
+      .json({ success: false, error: "Admission not found" });
+  try {
+    const bill = await computeRunningBill(orgId, admissionId);
+    return res.json({ success: true, data: bill });
+  } catch (e) {
+    return res
+      .status(e.status || 500)
+      .json({ success: false, error: e.message });
+  }
+}
+
+// Hidden dynamic pharmacy pricing — auto-pop the final price for a drug.
+// Normal users get only the final numbers; admins additionally get the breakdown.
+async function getPharmacyPrice(req, res, context) {
+  const { orgId } = context;
+  const { admissionId, drugId, quantity } = req.query;
+  if (!admissionId || !drugId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId and drugId required" });
+  if (!(await ownedAdmission(orgId, admissionId)))
+    return res
+      .status(404)
+      .json({ success: false, error: "Admission not found" });
+  try {
+    const r = await priceForPharmacyItem(orgId, admissionId, drugId, {
+      quantity,
+    });
+    const isAdmin =
+      req.user?.role === "admin" || req.user?.role === "super_admin";
+    const { breakdown, ...visible } = r;
+    // Role-based visibility: breakdown (base price, markup rule, plan) admins only.
+    return res.json({ success: true, data: isAdmin ? r : visible });
+  } catch (e) {
+    return res
+      .status(e.status || 500)
+      .json({ success: false, error: e.message });
+  }
+}
+
+// Phase 1: the persisted bill (current open DRAFT, else latest) + frozen line items.
+async function getBill(req, res, context) {
+  const { orgId } = context;
+  const { admissionId } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  if (!(await ownedAdmission(orgId, admissionId)))
+    return res
+      .status(404)
+      .json({ success: false, error: "Admission not found" });
+  const bill = await getCurrentBill(orgId, admissionId);
+  const allBills = await db.bill.findMany({
+    where: { organizationId: orgId, admissionId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      billNumber: true,
+      status: true,
+      billType: true,
+      payableTotal: true,
+      finalizedAt: true,
+      createdAt: true,
+    },
+  });
+  return res.json({ success: true, data: bill, history: allBills });
+}
+
+// Phase 2: payment ledger for a bill (or whole admission via floating payments)
+async function getPayments(req, res, context) {
+  const { orgId } = context;
+  const { billId, admissionId } = req.query;
+  if (!billId && !admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "billId or admissionId required" });
+  const where = { organizationId: orgId };
+  if (billId) where.billId = billId;
+  if (admissionId) {
+    where.admissionId = admissionId;
+    if (!(await ownedAdmission(orgId, admissionId)))
+      return res
+        .status(404)
+        .json({ success: false, error: "Admission not found" });
+  }
+  const rows = await db.billPayment.findMany({
+    where,
+    orderBy: { paidAt: "desc" },
+  });
+  return res.json({ success: true, data: rows });
+}
+
+// Phase 2: cashier daily/shift collection report
+async function getCollections(req, res, context) {
+  const { from, to, cashierId } = req.query;
+  const report = await collections(context.orgId, { from, to, cashierId });
+  return res.json({ success: true, data: report });
+}
+
+async function getBedCategories(req, res, context) {
+  const cats = await db.bedCategory.findMany({
+    where: { organizationId: context.orgId, isActive: true },
+    orderBy: { rank: "asc" },
+  });
+  return res.json({ success: true, data: cats });
+}
+
+async function getTariffPlans(req, res, context) {
+  const plans = await db.tariffPlan.findMany({
+    where: { organizationId: context.orgId, isActive: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return res.json({ success: true, data: plans });
+}
+
+// ── Phase 2: Nursing station — shared clinical time-series list ──────────────
+// vitals, clinical-notes-v2 and medication-administration are the SAME query
+// shape (filter by admission, paginate, return data+meta). One helper, three
+// thin wrappers — instead of three near-identical 25-line blocks.
+async function clinicalTimeSeries(req, res, context, model, orderBy) {
+  const { admissionId } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  const where = { organizationId: context.orgId, admissionId };
+  const [data, total] = await Promise.all([
+    db[model].findMany({
+      where,
+      orderBy,
+      take: context.clinLimit,
+      skip: context.clinOffset,
+    }),
+    db[model].count({ where }),
+  ]);
+  return res.json({
+    success: true,
+    data,
+    meta: {
+      total,
+      limit: context.clinLimit,
+      offset: context.clinOffset,
+      hasMore: context.clinOffset + context.clinLimit < total,
+    },
+  });
+}
+
+const getVitals = (req, res, context) =>
+  clinicalTimeSeries(req, res, context, "vitalsRecord", { recordedAt: "desc" });
+
+const getClinicalNotesV2 = (req, res, context) =>
+  clinicalTimeSeries(req, res, context, "clinicalNote", { authoredAt: "desc" });
+
+const getMedicationAdministration = (req, res, context) =>
+  clinicalTimeSeries(req, res, context, "medicationAdministration", [
+    { scheduledAt: "desc" },
+    { createdAt: "desc" },
+  ]);
+
+// ── Phase 3C: Scheduled order tasks (Treatment Chart) ──
+async function getOrderTasks(req, res, context) {
+  const { admissionId } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  const tasks = await db.orderTask.findMany({
+    where: { organizationId: context.orgId, admissionId },
+    orderBy: { scheduledAt: "asc" },
+    take: 500,
+  });
+  return res.json({ success: true, data: tasks });
+}
+
+// ── Phase 3A: Clinical Orders (reads; ungated like other IPD reads) ──
+async function getOrderables(req, res, context) {
+  const data = await orderableSearch.search(context.orgId, {
+    q: req.query.q,
+    type: req.query.type,
+  });
+  return res.json({ success: true, data });
+}
+
+async function getOrders(req, res, context) {
+  const data = await listOrders(context.orgId, {
+    admissionId: req.query.admissionId,
+    type: req.query.type,
+    status: req.query.status,
+  });
+  return res.json({ success: true, data });
+}
+
+async function getOrderById(req, res, context) {
+  if (!req.query.id)
+    return res.status(400).json({ success: false, error: "id required" });
+  const data = await getOrder(context.orgId, req.query.id);
+  return res.json({ success: true, data });
+}
+
+async function getOrderWorklist(req, res, context) {
+  const data = await listOrders(context.orgId, {
+    type: req.query.type,
+    status: req.query.status,
+    withContext: true,
+  });
+  return res.json({ success: true, data });
+}
+
+// ── ipd-consultation GET ──────────────────────────────────────────────────
+async function getIpdConsultations(req, res, context) {
+  const where = { organizationId: context.orgId };
+  if (req.query.admissionId) where.admissionId = req.query.admissionId;
+  if (req.query.status) where.status = req.query.status;
+  // Doctor portal: mine=true → consultations assigned to me OR requested by me
+  if (req.query.mine === "true" && req.user?.id) {
+    where.OR = [
+      { consultingDoctorId: req.user.id },
+      { requestedById: req.user.id },
+    ];
+  }
+  const consultations = await db.ipdConsultation.findMany({
+    where,
+    include: {
+      consultingDoctor: { select: { id: true, fullName: true } },
+      requestedBy: { select: { id: true, fullName: true } },
+      department: { select: { id: true, name: true } },
+      ipdCharge: { select: { id: true, lineTotal: true, status: true } },
+    },
+    orderBy: { requestedAt: "desc" },
+  });
+  return res.json({ success: true, data: consultations });
+}
+
 // ─── POST ─────────────────────────────────────────────────────────────────────
 
 export async function create(req, res) {
   try {
-    const ORGANIZATION_ID =
-      req.organizationId || process.env.ORGANIZATION_ID || "org-demo";
+    const orgId =
+      getOrgId(req);
     const { resource, ...body } = req.body;
 
     if (!ipdAllowed(req, resource)) {
@@ -763,37 +724,100 @@ export async function create(req, res) {
         });
     }
 
-    // ── ipd-consultation POST ─────────────────────────────────────────────────
-    if (resource === "ipd-consultation") {
+    if (resource === "ipd-consultation") return await createConsultation(req, res, orgId, body);
+    if (resource === "ward")             return await createWard(req, res, orgId, body);
+    if (resource === "bed")              return await createBed(req, res, orgId, body);
+    if (resource === "admission")        return await createAdmission(req, res, orgId, body);
+    if (resource === "transfer")         return await createTransfer(req, res, orgId, body);
+    if (resource === "sync-beds")        return await syncBeds(req, res, orgId, body);
+
+    if (resource === "note")                      return await createNoteLegacy(req, res, orgId, body);
+    if (resource === "post-charge")               return await createPostCharge(req, res, orgId, body);
+    if (resource === "vitals")                    return await createVitals(req, res, orgId, body);
+    if (resource === "note-v2")                   return await createNoteV2(req, res, orgId, body);
+    if (resource === "medication-administration") return await createMedicationAdministration(req, res, orgId, body);
+
+    if (resource === "bill-generate")     return await createBillGenerate(req, res, orgId, body);
+    if (resource === "bill-finalize")      return await createBillFinalize(req, res, orgId, body);
+    if (resource === "bill-cancel")        return await createBillCancel(req, res, orgId, body);
+    if (resource === "payment")            return await createPayment(req, res, orgId, body);
+    if (resource === "void-payment")       return await createVoidPayment(req, res, orgId, body);
+    if (resource === "refund")             return await createRefund(req, res, orgId, body);
+    if (resource === "cancel-charge")      return await createCancelCharge(req, res, orgId, body);
+    if (resource === "discharge-finalize") return await createDischargeFinalize(req, res, orgId, body);
+    if (resource === "mark-exit")          return await createMarkExit(req, res, orgId, body);
+    if (resource === "order")              return await createOrderResource(req, res, orgId, body);
+    if (
+      resource === "order-ack" ||
+      resource === "order-start" ||
+      resource === "order-cancel"
+    )
+      return await createOrderTransition(req, res, orgId, body, resource);
+    if (resource === "order-complete")     return await createOrderComplete(req, res, orgId, body);
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid resource. Use: ward, bed, admission, note, billing, charge, sync-beds, transfer, post-charge, vitals, note-v2, medication-administration, discharge-finalize, mark-exit, order, order-ack, order-start, order-complete, order-cancel",
+      });
+  } catch (err) {
+    console.error("inpatient create error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ─── create helpers ──────────────────────────────────────────────────────────
+// One focused handler per POST resource. Same behaviour & JSON as the old inline
+// blocks — only the structure changed (create() is now a thin dispatcher).
+
+async function createConsultation(req, res, orgId, body) {
       const { admissionId, consultingDoctorId, departmentId,
-               referralReason, chargeItemCode, scheduledAt } = body;
+               referralReason, scheduledAt } = body;
       if (!admissionId || !consultingDoctorId) {
         return res.status(400).json({ success: false, error: "admissionId and consultingDoctorId are required" });
       }
-      const admission = await ownedAdmission(ORGANIZATION_ID, admissionId);
+      const admission = await ownedAdmission(orgId, admissionId);
       if (!admission)
         return res.status(404).json({ success: false, error: "Admission not found" });
       if (admission.status !== "admitted")
         return res.status(409).json({ success: false, error: "Patient is not currently admitted" });
 
-      const consultation = await db.ipdConsultation.create({
-        data: {
-          organizationId:    ORGANIZATION_ID,
-          admissionId,
-          consultingDoctorId,
-          requestedById:     req.user?.id  || null,
-          departmentId:      departmentId  || null,
-          referralReason:    referralReason || null,
-          chargeItemCode:    chargeItemCode || null,
-          scheduledAt:       scheduledAt ? new Date(scheduledAt) : null,
-          status:            "REQUESTED",
-        },
-      });
-      await auditIpd(req, ORGANIZATION_ID, { action: "create", entityType: "ipd.consultation", entityId: consultation.id, newValues: consultation });
+      let consultation;
+      let charge;
+      try {
+        const actor = {
+          id: req.user?.id || req.user?.userId || null,
+          name: req.user?.fullName || null,
+          role: req.user?.role || null,
+        };
+        const result = await db.$transaction(async (tx) => {
+          const consult = await tx.ipdConsultation.create({
+            data: {
+              organizationId:    orgId,
+              admissionId,
+              consultingDoctorId,
+              requestedById:     actor.id,
+              departmentId:      departmentId  || null,
+              referralReason:    referralReason || null,
+              scheduledAt:       scheduledAt ? new Date(scheduledAt) : null,
+              status:            "REQUESTED",
+            },
+          });
+          const billed = await billConsultation(tx, orgId, consult, actor);
+          return { consultation: consult, charge: billed.charge };
+        });
+        consultation = result.consultation;
+        charge = result.charge;
+      } catch (err) {
+        console.error("Consultation creation/billing error:", err);
+        return res.status(500).json({ success: false, error: "Failed to create and bill consultation" });
+      }
+      await auditIpd(req, orgId, { action: "create", entityType: "ipd.consultation", entityId: consultation.id, newValues: consultation });
       return res.status(201).json({ success: true, data: consultation });
-    }
+}
 
-    if (resource === "ward") {
+async function createWard(req, res, orgId, body) {
       const parsed = wardSchema.safeParse(body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
@@ -804,14 +828,14 @@ export async function create(req, res) {
         data: {
           ...parsed.data,
           capacity,
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           isActive: true,
         },
       });
 
       await db.bed.createMany({
         data: Array.from({ length: capacity }, (_, i) => ({
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           wardId: ward.id,
           bedNumber: String(i + 1),
           type: "Standard",
@@ -825,9 +849,9 @@ export async function create(req, res) {
       });
 
       return res.status(201).json({ success: true, data: wardWithBeds });
-    }
+}
 
-    if (resource === "bed") {
+async function createBed(req, res, orgId, body) {
       const parsed = bedSchema.safeParse(body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
@@ -836,15 +860,15 @@ export async function create(req, res) {
       const bed = await db.bed.create({
         data: {
           ...parsed.data,
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
         },
         include: { ward: true },
       });
 
       return res.status(201).json({ success: true, data: bed });
-    }
+}
 
-    if (resource === "admission") {
+async function createAdmission(req, res, orgId, body) {
       const parsed = admissionSchema.safeParse(body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten() });
@@ -855,7 +879,7 @@ export async function create(req, res) {
       // H4: one active admission per patient.
       const activeForPatient = await db.admission.findFirst({
         where: {
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           patientId: admissionData.patientId,
           status: "admitted",
         },
@@ -876,16 +900,16 @@ export async function create(req, res) {
       const plan =
         (await db.tariffPlan.findFirst({
           where: {
-            organizationId: ORGANIZATION_ID,
+            organizationId: orgId,
             payerType,
             isDefault: true,
           },
         })) ||
         (await db.tariffPlan.findFirst({
-          where: { organizationId: ORGANIZATION_ID, payerType },
+          where: { organizationId: orgId, payerType },
         })) ||
         (await db.tariffPlan.findFirst({
-          where: { organizationId: ORGANIZATION_ID, isDefault: true },
+          where: { organizationId: orgId, isDefault: true },
         }));
 
       let admission;
@@ -897,7 +921,7 @@ export async function create(req, res) {
             const claimed = await tx.bed.updateMany({
               where: {
                 id: bedId,
-                organizationId: ORGANIZATION_ID,
+                organizationId: orgId,
                 status: "available",
               },
               data: { status: "occupied" },
@@ -919,7 +943,7 @@ export async function create(req, res) {
             data: {
               ...admissionData,
               ...(bedId ? { bedId } : {}),
-              organizationId: ORGANIZATION_ID,
+              organizationId: orgId,
               status: "admitted",
               admissionState: "ADMITTED",
               admissionDate: new Date(),
@@ -943,7 +967,7 @@ export async function create(req, res) {
           if (bedId) {
             await tx.bedOccupancy.create({
               data: {
-                organizationId: ORGANIZATION_ID,
+                organizationId: orgId,
                 admissionId: adm.id,
                 bedId,
                 bedCategoryId,
@@ -955,7 +979,7 @@ export async function create(req, res) {
           if (plan) {
             await tx.patientTariff.create({
               data: {
-                organizationId: ORGANIZATION_ID,
+                organizationId: orgId,
                 admissionId: adm.id,
                 planId: plan.id,
                 payerType,
@@ -982,7 +1006,7 @@ export async function create(req, res) {
         throw e;
       }
 
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "create",
         entityType: "ipd.admission",
         entityId: admission.id,
@@ -993,9 +1017,9 @@ export async function create(req, res) {
         },
       });
       return res.status(201).json({ success: true, data: admission });
-    }
+}
 
-    if (resource === "transfer") {
+async function createTransfer(req, res, orgId, body) {
       const { admissionId, toBedId, transferReason, authorName } = body;
       if (!admissionId || !toBedId) {
         return res
@@ -1003,7 +1027,7 @@ export async function create(req, res) {
           .json({ success: false, error: "admissionId and toBedId required" });
       }
       const admission = await db.admission.findFirst({
-        where: { id: admissionId, organizationId: ORGANIZATION_ID },
+        where: { id: admissionId, organizationId: orgId },
       });
       if (!admission)
         return res
@@ -1025,12 +1049,12 @@ export async function create(req, res) {
       const [fromBed, toBed] = await Promise.all([
         admission.bedId
           ? db.bed.findFirst({
-              where: { id: admission.bedId, organizationId: ORGANIZATION_ID },
+              where: { id: admission.bedId, organizationId: orgId },
               include: { ward: true },
             })
           : null,
         db.bed.findFirst({
-          where: { id: toBedId, organizationId: ORGANIZATION_ID },
+          where: { id: toBedId, organizationId: orgId },
           include: { ward: true },
         }),
       ]);
@@ -1043,22 +1067,7 @@ export async function create(req, res) {
       const toWardName = toBed?.ward?.name || "Unknown Ward";
       const toBedNo = toBed?.bedNumber || "—";
 
-      let existing = [];
-      try {
-        existing = admission.clinicalNotes
-          ? JSON.parse(admission.clinicalNotes)
-          : [];
-      } catch {
-        existing = [];
-      }
-      if (!Array.isArray(existing)) existing = [];
-      const transferNote = {
-        id: `note-${Date.now()}`,
-        date: new Date().toISOString(),
-        noteType: "transfer",
-        note: `WARD TRANSFER NOTE: Patient moved from ${fromWardName} (Bed ${fromBedNo}) to ${toWardName} (Bed ${toBedNo}).${transferReason ? ` Reason: ${transferReason}` : ""}`,
-        authorName: authorName || "System",
-      };
+      const transferText = `WARD TRANSFER NOTE: Patient moved from ${fromWardName} (Bed ${fromBedNo}) to ${toWardName} (Bed ${toBedNo}).${transferReason ? ` Reason: ${transferReason}` : ""}`;
       const now = new Date();
 
       let updated;
@@ -1068,7 +1077,7 @@ export async function create(req, res) {
           const claimed = await tx.bed.updateMany({
             where: {
               id: toBedId,
-              organizationId: ORGANIZATION_ID,
+              organizationId: orgId,
               status: "available",
             },
             data: { status: "occupied" },
@@ -1093,7 +1102,7 @@ export async function create(req, res) {
           });
           await tx.bedOccupancy.create({
             data: {
-              organizationId: ORGANIZATION_ID,
+              organizationId: orgId,
               admissionId,
               bedId: toBedId,
               bedCategoryId: toBed?.bedCategoryId || null,
@@ -1101,12 +1110,23 @@ export async function create(req, res) {
               reason: "TRANSFER",
             },
           });
+          // Transfer note now lives in the proper ClinicalNote table (noteType:'transfer'),
+          // inside the same transaction — no more JSON read-modify-write on the admission.
+          await tx.clinicalNote.create({
+            data: {
+              organizationId: orgId,
+              admissionId,
+              noteType: "transfer",
+              body: transferText,
+              authorName: authorName || "System",
+              authoredAt: now,
+            },
+          });
           return tx.admission.update({
             where: { id: admissionId },
             data: {
               bedId: toBedId,
               status: "admitted",
-              clinicalNotes: JSON.stringify([...existing, transferNote]),
             },
             include: {
               patient: {
@@ -1136,7 +1156,7 @@ export async function create(req, res) {
             });
         throw e;
       }
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "transfer",
         entityType: "ipd.admission",
         entityId: admissionId,
@@ -1144,9 +1164,9 @@ export async function create(req, res) {
         after: { bedId: toBedId, reason: transferReason || null },
       });
       return res.json({ success: true, data: updated });
-    }
+}
 
-    if (resource === "sync-beds") {
+async function syncBeds(req, res, orgId, body) {
       const { wardId } = body;
       if (!wardId)
         return res
@@ -1154,7 +1174,7 @@ export async function create(req, res) {
           .json({ success: false, error: "wardId required" });
 
       const ward = await db.ward.findFirst({
-        where: { id: wardId, organizationId: ORGANIZATION_ID },
+        where: { id: wardId, organizationId: orgId },
         include: { beds: true },
       });
       if (!ward)
@@ -1169,7 +1189,7 @@ export async function create(req, res) {
         const num = String(i);
         if (!existingNumbers.has(num)) {
           toCreate.push({
-            organizationId: ORGANIZATION_ID,
+            organizationId: orgId,
             wardId,
             bedNumber: num,
             type: "Standard",
@@ -1184,9 +1204,9 @@ export async function create(req, res) {
         include: { beds: { orderBy: { bedNumber: "asc" } } },
       });
       return res.json({ success: true, data: wardWithBeds });
-    }
+}
 
-    if (resource === "note") {
+async function createNoteLegacy(req, res, orgId, body) {
       // Frontend-friendly alias: accepts { admissionId, type, text, vitals: {bp,temp,pulse,spo2,weight} }
       const { admissionId, type, text, vitals } = body;
       if (!admissionId || !text)
@@ -1194,181 +1214,44 @@ export async function create(req, res) {
           .status(400)
           .json({ success: false, error: "admissionId and text required" });
       const admission = await db.admission.findFirst({
-        where: { id: admissionId, organizationId: ORGANIZATION_ID },
-        select: { clinicalNotes: true },
+        where: { id: admissionId, organizationId: orgId },
+        select: { id: true },
       });
       if (!admission)
         return res
           .status(404)
           .json({ success: false, error: "Admission not found" });
-      let existing = [];
-      try {
-        existing = admission.clinicalNotes
-          ? JSON.parse(admission.clinicalNotes)
-          : [];
-      } catch {
-        existing = [];
-      }
-      const newNote = {
-        id: `note-${Date.now()}`,
-        date: new Date().toISOString(),
-        noteType: type || "Nursing",
-        note: text,
-        vitals: vitals || null,
-      };
-      await db.admission.update({
-        where: { id: admissionId },
-        data: { clinicalNotes: JSON.stringify([...existing, newNote]) },
+      // Write to the proper ClinicalNote table — one INSERT, no read-modify-write,
+      // so two nurses adding notes at once can't overwrite each other (old JSON bug).
+      const note = await db.clinicalNote.create({
+        data: {
+          organizationId: orgId,
+          admissionId,
+          noteType: type || "Other notes",
+          body: text,
+          authorId: req.user?.id || null,
+          authorName: body.authorName || req.user?.fullName || null,
+          vitals: vitals || undefined,
+        },
       });
       return res
         .status(201)
         .json({
           success: true,
           data: {
-            ...newNote,
-            type: newNote.noteType,
-            text: newNote.note,
-            createdAt: newNote.date,
+            id: note.id,
+            type: note.noteType,
+            text: note.body,
+            createdAt: note.authoredAt,
+            vitals: note.vitals || null,
           },
         });
-    }
+}
 
-    // @deprecated LEGACY — writes Admission.totalBillAmount/billGenerated. Desktop uses bill-generate/bill-finalize.
-    if (resource === "billing") {
-      console.warn(
-        "[DEPRECATED] inpatient POST resource=billing — use resource=bill-generate / bill-finalize",
-      );
-      const { admissionId, dailyRate } = body;
-      if (!admissionId)
-        return res
-          .status(400)
-          .json({ success: false, error: "admissionId required" });
-      const admission = await db.admission.findFirst({
-        where: { id: admissionId, organizationId: ORGANIZATION_ID },
-        select: { admissionDate: true, additionalCharges: true },
-      });
-      if (!admission)
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      const days = Math.max(
-        1,
-        Math.round(
-          (Date.now() - new Date(admission.admissionDate).getTime()) /
-            (1000 * 60 * 60 * 24),
-        ),
-      );
-      const rate = parseFloat(dailyRate) || 0;
-      let charges = [];
-      try {
-        charges = admission.additionalCharges
-          ? JSON.parse(admission.additionalCharges)
-          : [];
-      } catch {
-        charges = [];
-      }
-      const extraTotal = charges.reduce(
-        (s, c) => s + (c.amount || 0) * (c.quantity || 1),
-        0,
-      );
-      const total = rate * days + extraTotal;
-      await db.admission.update({
-        where: { id: admissionId },
-        data: {
-          dailyRoomRate: rate,
-          totalBillAmount: total,
-          billGenerated: true,
-        },
-      });
-      await auditIpd(req, ORGANIZATION_ID, {
-        action: "update",
-        entityType: "ipd.billing",
-        entityId: admissionId,
-        after: { dailyRate: rate, totalBillAmount: total, billGenerated: true },
-      });
-      return res
-        .status(201)
-        .json({
-          success: true,
-          data: {
-            id: admissionId,
-            dailyRate: rate,
-            totalBillAmount: total,
-            billGenerated: true,
-            charges,
-          },
-        });
-    }
-
-    // @deprecated LEGACY — writes Admission.additionalCharges (JSON). Desktop uses resource=post-charge (IpdCharge).
-    if (resource === "charge") {
-      console.warn(
-        "[DEPRECATED] inpatient POST resource=charge — use resource=post-charge (IpdCharge)",
-      );
-      // billingId is the admissionId (billing is stored on admission)
-      const { billingId, name, type, amount, quantity } = body;
-      if (!billingId || !name || amount === undefined)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "billingId, name, and amount required",
-          });
-      const admission = await db.admission.findFirst({
-        where: { id: billingId, organizationId: ORGANIZATION_ID },
-        select: {
-          additionalCharges: true,
-          admissionDate: true,
-          dailyRoomRate: true,
-        },
-      });
-      if (!admission)
-        return res
-          .status(404)
-          .json({ success: false, error: "Admission not found" });
-      let charges = [];
-      try {
-        charges = admission.additionalCharges
-          ? JSON.parse(admission.additionalCharges)
-          : [];
-      } catch {
-        charges = [];
-      }
-      const newCharge = {
-        id: `charge-${Date.now()}`,
-        name,
-        type: type || "Other",
-        amount: parseFloat(amount) || 0,
-        quantity: parseInt(quantity) || 1,
-        date: new Date().toISOString(),
-      };
-      charges.push(newCharge);
-      const days = Math.max(
-        1,
-        Math.round(
-          (Date.now() - new Date(admission.admissionDate).getTime()) /
-            (1000 * 60 * 60 * 24),
-        ),
-      );
-      const extraTotal = charges.reduce(
-        (s, c) => s + (c.amount || 0) * (c.quantity || 1),
-        0,
-      );
-      const total = (admission.dailyRoomRate || 0) * days + extraTotal;
-      await db.admission.update({
-        where: { id: billingId },
-        data: {
-          additionalCharges: JSON.stringify(charges),
-          totalBillAmount: total,
-        },
-      });
-      return res.status(201).json({ success: true, data: newCharge });
-    }
-
-    // Enterprise: post a charge line, auto-priced by the tariff engine (idempotent per source).
-    // Two modes: pharmacyDrugId (price from pharmacy catalog + ward markup + GST) OR
-    // itemCode / description+base (generic tariff item).
-    if (resource === "post-charge") {
+// Enterprise: post a charge line, auto-priced by the tariff engine (idempotent per source).
+// Two modes: pharmacyDrugId (price from pharmacy catalog + ward markup + GST) OR
+// itemCode / description+base (generic tariff item).
+async function createPostCharge(req, res, orgId, body) {
       const {
         admissionId,
         pharmacyDrugId,
@@ -1394,7 +1277,7 @@ export async function create(req, res) {
           });
       }
       const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
+        orgId,
         admissionId,
       );
       if (!admissionBelongsToOrg) {
@@ -1406,7 +1289,7 @@ export async function create(req, res) {
       if (sourceModule && sourceRef) {
         const dup = await db.ipdCharge
           .findFirst({
-            where: { organizationId: ORGANIZATION_ID, sourceModule, sourceRef },
+            where: { organizationId: orgId, sourceModule, sourceRef },
           })
           .catch(() => null);
         if (dup) return res.json({ success: true, data: dup, deduped: true });
@@ -1419,7 +1302,7 @@ export async function create(req, res) {
         if (pharmacyDrugId) {
           // Pharmacy item: base from catalog, ward markup applied, GST captured.
           const p = await priceForPharmacyItem(
-            ORGANIZATION_ID,
+            orgId,
             admissionId,
             pharmacyDrugId,
             { quantity, serviceDate },
@@ -1448,7 +1331,7 @@ export async function create(req, res) {
             },
           };
         } else {
-          const priced = await resolvePrice(ORGANIZATION_ID, admissionId, {
+          const priced = await resolvePrice(orgId, admissionId, {
             itemCode,
             base: base !== undefined ? Number(base) : undefined,
             serviceGroup,
@@ -1497,7 +1380,7 @@ export async function create(req, res) {
 
       const charge = await db.ipdCharge.create({
         data: {
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           admissionId,
           ...chargeData,
           status: "ACTIVE",
@@ -1508,7 +1391,7 @@ export async function create(req, res) {
           sourceRef: sourceRef || null,
         },
       });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "charge",
         entityType: "ipd.charge",
         entityId: charge.id,
@@ -1521,17 +1404,17 @@ export async function create(req, res) {
         },
       });
       return res.status(201).json({ success: true, data: charge });
-    }
+}
 
-    // Phase 2: record vitals (auto-computes NEWS2 early-warning score)
-    if (resource === "vitals") {
+// Phase 2: record vitals (auto-computes NEWS2 early-warning score)
+async function createVitals(req, res, orgId, body) {
       const { admissionId } = body;
       if (!admissionId)
         return res
           .status(400)
           .json({ success: false, error: "admissionId required" });
       const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
+        orgId,
         admissionId,
       );
       if (!admissionBelongsToOrg) {
@@ -1566,7 +1449,7 @@ export async function create(req, res) {
       const news = computeNews2(fields);
       const rec = await db.vitalsRecord.create({
         data: {
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           admissionId,
           ...fields,
           newsScore: news.score,
@@ -1577,7 +1460,7 @@ export async function create(req, res) {
           recordedAt: body.recordedAt ? new Date(body.recordedAt) : new Date(),
         },
       });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "create",
         entityType: "ipd.vitals",
         entityId: rec.id,
@@ -1588,10 +1471,10 @@ export async function create(req, res) {
         },
       });
       return res.status(201).json({ success: true, data: rec });
-    }
+}
 
-    // Phase 2: append a structured clinical note (append-only)
-    if (resource === "note-v2") {
+// Phase 2: append a structured clinical note (append-only)
+async function createNoteV2(req, res, orgId, body) {
       const { admissionId, body: noteBody, noteType, parentId, vitals } = body;
       const hasRequiredFields = admissionId && noteBody;
 
@@ -1602,7 +1485,7 @@ export async function create(req, res) {
       }
 
       const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
+        orgId,
         admissionId,
       );
       if (!admissionBelongsToOrg) {
@@ -1613,9 +1496,9 @@ export async function create(req, res) {
 
       const note = await db.clinicalNote.create({
         data: {
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           admissionId,
-          noteType: noteType || "PROGRESS",
+          noteType: noteType || "Other notes",
           body: noteBody,
           authorId: req.user?.id || null,
           authorName: body.authorName || req.user?.fullName || null,
@@ -1623,24 +1506,24 @@ export async function create(req, res) {
           vitals: vitals || undefined,
         },
       });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "create",
         entityType: "ipd.note",
         entityId: note.id,
         after: { admissionId, noteType: note.noteType },
       });
       return res.status(201).json({ success: true, data: note });
-    }
+}
 
-    // Phase 2: record a medication administration (eMAR)
-    if (resource === "medication-administration") {
+// Phase 2: record a medication administration (eMAR)
+async function createMedicationAdministration(req, res, orgId, body) {
       const { admissionId, drugName, status } = body;
       if (!admissionId || !drugName)
         return res
           .status(400)
           .json({ success: false, error: "admissionId and drugName required" });
       const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
+        orgId,
         admissionId,
       );
       if (!admissionBelongsToOrg) {
@@ -1664,9 +1547,17 @@ export async function create(req, res) {
             : new Date()
           : null;
 
+      const DRUG_FORMS = [
+        "Tablet", "Capsule", "Syrup", "Injection", "Cream",
+        "Ointment", "Drops", "Inhaler", "Suppository", "Solution", "Suspension"
+      ];
+      if (body.route && !DRUG_FORMS.includes(body.route)) {
+        return res.status(400).json({ success: false, error: `Invalid route. Allowed values: ${DRUG_FORMS.join(', ')}` });
+      }
+
       const rec = await db.medicationAdministration.create({
         data: {
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           admissionId,
           prescriptionId: body.prescriptionId || null,
           drugName,
@@ -1691,20 +1582,20 @@ export async function create(req, res) {
           status: rec.status,
         },
       };
-      await auditIpd(req, ORGANIZATION_ID, auditEntry);
+      await auditIpd(req, orgId, auditEntry);
 
       return res.status(201).json({ success: true, data: rec });
-    }
+}
 
-    // ── Phase 1 billing ──────────────────────────────────────────────────────
-    if (resource === "bill-generate") {
+// ── Phase 1 billing ──────────────────────────────────────────────────────
+async function createBillGenerate(req, res, orgId, body) {
       const { admissionId } = body;
       if (!admissionId)
         return res
           .status(400)
           .json({ success: false, error: "admissionId required" });
       const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
+        orgId,
         admissionId,
       );
       if (!admissionBelongsToOrg) {
@@ -1714,11 +1605,11 @@ export async function create(req, res) {
       }
       try {
         const bill = await generateBill(
-          ORGANIZATION_ID,
+          orgId,
           admissionId,
           req.user?.id,
         );
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: "update",
           entityType: "ipd.bill",
           entityId: bill.id,
@@ -1730,20 +1621,18 @@ export async function create(req, res) {
         });
         return res.status(201).json({ success: true, data: bill });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    if (resource === "bill-finalize") {
+async function createBillFinalize(req, res, orgId, body) {
       const { admissionId, billType } = body;
       if (!admissionId)
         return res
           .status(400)
           .json({ success: false, error: "admissionId required" });
       const admissionBelongsToOrg = await ownedAdmission(
-        ORGANIZATION_ID,
+        orgId,
         admissionId,
       );
       if (!admissionBelongsToOrg) {
@@ -1752,11 +1641,11 @@ export async function create(req, res) {
           .json({ success: false, error: "Admission not found" });
       }
       try {
-        const bill = await finalizeBill(ORGANIZATION_ID, admissionId, {
+        const bill = await finalizeBill(orgId, admissionId, {
           userId: req.user?.id,
           billType,
         });
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: "finalize",
           entityType: "ipd.bill",
           entityId: bill.id,
@@ -1768,21 +1657,19 @@ export async function create(req, res) {
         });
         return res.json({ success: true, data: bill });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    if (resource === "bill-cancel") {
+async function createBillCancel(req, res, orgId, body) {
       const { billId, reason } = body;
       if (!billId)
         return res
           .status(400)
           .json({ success: false, error: "billId required" });
       try {
-        const bill = await cancelBill(ORGANIZATION_ID, billId, { reason });
-        await auditIpd(req, ORGANIZATION_ID, {
+        const bill = await cancelBill(orgId, billId, { reason });
+        await auditIpd(req, orgId, {
           action: "cancel",
           entityType: "ipd.bill",
           entityId: billId,
@@ -1790,18 +1677,16 @@ export async function create(req, res) {
         });
         return res.json({ success: true, data: bill });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    // Phase 2: collect a payment / advance
-    if (resource === "payment") {
+// Phase 2: collect a payment / advance
+async function createPayment(req, res, orgId, body) {
       const { billId, amount, method, reference, type, note, idempotencyKey } =
         body;
       try {
-        const r = await collectPayment(ORGANIZATION_ID, {
+        const r = await collectPayment(orgId, {
           billId,
           amount,
           method,
@@ -1813,7 +1698,7 @@ export async function create(req, res) {
           userName: req.user?.fullName,
         });
         if (!r.deduped)
-          await auditIpd(req, ORGANIZATION_ID, {
+          await auditIpd(req, orgId, {
             action: "payment",
             entityType: "ipd.payment",
             entityId: r.payment.id,
@@ -1834,22 +1719,20 @@ export async function create(req, res) {
             deduped: r.deduped || false,
           });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    // Phase 2: void a payment (audit-safe)
-    if (resource === "void-payment") {
+// Phase 2: void a payment (audit-safe)
+async function createVoidPayment(req, res, orgId, body) {
       const { paymentId, reason } = body;
       if (!paymentId)
         return res
           .status(400)
           .json({ success: false, error: "paymentId required" });
       try {
-        const p = await voidPayment(ORGANIZATION_ID, paymentId, { reason });
-        await auditIpd(req, ORGANIZATION_ID, {
+        const p = await voidPayment(orgId, paymentId, { reason });
+        await auditIpd(req, orgId, {
           action: "void",
           entityType: "ipd.payment",
           entityId: paymentId,
@@ -1857,17 +1740,15 @@ export async function create(req, res) {
         });
         return res.json({ success: true, data: p });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    // Phase 2: refund (signed-negative ledger entry; credit note in Phase 3)
-    if (resource === "refund") {
+// Phase 2: refund (signed-negative ledger entry; credit note in Phase 3)
+async function createRefund(req, res, orgId, body) {
       const { billId, amount, reason, method } = body;
       try {
-        const r = await refund(ORGANIZATION_ID, {
+        const r = await refund(orgId, {
           billId,
           amount,
           reason,
@@ -1875,7 +1756,7 @@ export async function create(req, res) {
           userId: req.user?.id,
           userName: req.user?.fullName,
         });
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: "refund",
           entityType: "ipd.payment",
           entityId: r.payment.id,
@@ -1890,25 +1771,23 @@ export async function create(req, res) {
           .status(201)
           .json({ success: true, data: r.payment, totals: r.totals });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    if (resource === "cancel-charge") {
+async function createCancelCharge(req, res, orgId, body) {
       const { chargeId, status: cStatus, reason } = body;
       if (!chargeId)
         return res
           .status(400)
           .json({ success: false, error: "chargeId required" });
       try {
-        const charge = await cancelCharge(ORGANIZATION_ID, chargeId, {
+        const charge = await cancelCharge(orgId, chargeId, {
           status: cStatus,
           reason,
           userId: req.user?.id,
         });
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: "cancel",
           entityType: "ipd.charge",
           entityId: chargeId,
@@ -1916,14 +1795,12 @@ export async function create(req, res) {
         });
         return res.json({ success: true, data: charge });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    // Finalize discharge — gated on a paid bill (NORMAL), with bed turnover.
-    if (resource === "discharge-finalize") {
+// Finalize discharge — gated on a paid bill (NORMAL), with bed turnover.
+async function createDischargeFinalize(req, res, orgId, body) {
       const { admissionId, dischargeType = "NORMAL", force } = body;
       if (!admissionId)
         return res
@@ -1940,7 +1817,7 @@ export async function create(req, res) {
         const payerType = tariff?.payerType || "CASH";
         if (payerType === "CASH") {
           const curBill = await getCurrentBill(
-            ORGANIZATION_ID,
+            orgId,
             admissionId,
           ).catch(() => null);
           const outstanding =
@@ -1956,7 +1833,7 @@ export async function create(req, res) {
         }
       }
 
-      const admission = await ownedAdmission(ORGANIZATION_ID, admissionId);
+      const admission = await ownedAdmission(orgId, admissionId);
       if (!admission)
         return res
           .status(404)
@@ -1999,7 +1876,7 @@ export async function create(req, res) {
         return upd;
       });
 
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "discharge",
         entityType: "ipd.admission",
         entityId: admissionId,
@@ -2011,7 +1888,7 @@ export async function create(req, res) {
       // Best-effort: never block a completed discharge if billing hiccups.
       let bill = null;
       try {
-        bill = await finalizeBill(ORGANIZATION_ID, admissionId, {
+        bill = await finalizeBill(orgId, admissionId, {
           userId: req.user?.id,
         });
       } catch (e) {
@@ -2019,10 +1896,10 @@ export async function create(req, res) {
       }
 
       return res.json({ success: true, data: updated, bill });
-    }
+}
 
-    // Phase 3: quick exit (LAMA / ABSCONDED / EXPIRED) — bypasses clearances
-    if (resource === "mark-exit") {
+// Phase 3: quick exit (LAMA / ABSCONDED / EXPIRED) — bypasses clearances
+async function createMarkExit(req, res, orgId, body) {
       const { admissionId, dischargeType } = body;
       if (!admissionId || !dischargeType)
         return res
@@ -2036,7 +1913,7 @@ export async function create(req, res) {
         return res
           .status(400)
           .json({ success: false, error: "Invalid dischargeType" });
-      const admission = await ownedAdmission(ORGANIZATION_ID, admissionId);
+      const admission = await ownedAdmission(orgId, admissionId);
       if (!admission)
         return res
           .status(404)
@@ -2069,7 +1946,7 @@ export async function create(req, res) {
         }
         return upd;
       });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "discharge",
         entityType: "ipd.admission",
         entityId: admissionId,
@@ -2077,16 +1954,16 @@ export async function create(req, res) {
         after: { status: "discharged", dischargeType, state: typeCfg.state },
       });
       return res.json({ success: true, data: updated });
-    }
+}
 
-    // ── Phase 3A: Clinical Orders (CPOE) — SPINE ONLY (no billing, no executor) ──
-    if (resource === "order") {
+// ── Phase 3A: Clinical Orders (CPOE) — SPINE ONLY (no billing, no executor) ──
+async function createOrderResource(req, res, orgId, body) {
       const { admissionId } = body;
       if (!admissionId)
         return res
           .status(400)
           .json({ success: false, error: "admissionId required" });
-      const adm = await ownedAdmission(ORGANIZATION_ID, admissionId, {
+      const adm = await ownedAdmission(orgId, admissionId, {
         id: true,
         patientId: true,
         status: true,
@@ -2095,18 +1972,28 @@ export async function create(req, res) {
         return res
           .status(404)
           .json({ success: false, error: "Admission not found" });
-      const actor = {
-        id: req.user?.id || req.user?.userId || null,
-        name: req.user?.fullName || null,
-        role: req.user?.role || null,
-      };
+      const actor = getActor(req);
       try {
+        // Spine only at creation — NO charge here. Charges are posted per
+        // occurrence when the nurse ticks the task DONE (billOrderTask), so a
+        // recurring order (e.g. ABG TDS x2d) bills for each collection actually
+        // performed instead of a single line, and missed doses are not billed.
         const order = await createOrder(
-          ORGANIZATION_ID,
+          orgId,
           { ...body, patientId: body.patientId || adm.patientId },
           actor,
         );
-        await auditIpd(req, ORGANIZATION_ID, {
+
+        // Expand the order's frequency + duration into scheduled tasks for the
+        // nurse Treatment Chart / MAR. Non-blocking: a failure here must not undo
+        // the committed order — tasks can be regenerated later.
+        try {
+          await generateTasksForOrder(orgId, order);
+        } catch (taskErr) {
+          console.error("Order task generation failed (order kept):", taskErr);
+        }
+
+        await auditIpd(req, orgId, {
           action: "create",
           entityType: "ipd.order",
           entityId: order.id,
@@ -2119,18 +2006,12 @@ export async function create(req, res) {
         });
         return res.status(201).json({ success: true, data: order });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    // Non-completing transitions (spine only — no billing).
-    if (
-      resource === "order-ack" ||
-      resource === "order-start" ||
-      resource === "order-cancel"
-    ) {
+// Non-completing transitions (spine only — no billing).
+async function createOrderTransition(req, res, orgId, body, resource) {
       const action = {
         "order-ack": "ack",
         "order-start": "start",
@@ -2138,25 +2019,34 @@ export async function create(req, res) {
       }[resource];
       if (!body.id)
         return res.status(400).json({ success: false, error: "id required" });
-      const actor = {
-        id: req.user?.id || req.user?.userId || null,
-        name: req.user?.fullName || null,
-        role: req.user?.role || null,
-      };
+      const actor = getActor(req);
       try {
         const { order, before } = await orderTransition(
-          ORGANIZATION_ID,
+          orgId,
           body.id,
           action,
           actor,
           { reason: body.reason },
         );
+
+        // Auto-cancel associated charge if the order is cancelled
+        if (action === "cancel" && order.ipdChargeId) {
+          await db.ipdCharge.update({
+            where: { id: order.ipdChargeId },
+            data: {
+              status: "CANCELLED",
+              cancelReason: body.reason || "Order cancelled",
+              cancelledById: actor.id,
+              cancelledAt: new Date()
+            }
+          });
+        }
         const auditAction = {
           ack: "acknowledge",
           start: "start",
           cancel: "cancel",
         }[action];
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: auditAction,
           entityType: "ipd.order",
           entityId: order.id,
@@ -2168,24 +2058,18 @@ export async function create(req, res) {
         });
         return res.json({ success: true, data: order });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
+}
 
-    // Completion (Phase 3B: PROCEDURE auto-bills via the existing tariff→IpdCharge flow).
-    if (resource === "order-complete") {
+// Completion (Phase 3B: PROCEDURE auto-bills via the existing tariff→IpdCharge flow).
+async function createOrderComplete(req, res, orgId, body) {
       if (!body.id)
         return res.status(400).json({ success: false, error: "id required" });
-      const actor = {
-        id: req.user?.id || req.user?.userId || null,
-        name: req.user?.fullName || null,
-        role: req.user?.role || null,
-      };
+      const actor = getActor(req);
       // Discipline-scoped completion (gate 2 — in addition to ipdAllowed above).
       const existing = await db.clinicalOrder.findFirst({
-        where: { id: body.id, organizationId: ORGANIZATION_ID },
+        where: { id: body.id, organizationId: orgId },
         select: { orderType: true },
       });
       if (!existing)
@@ -2209,15 +2093,15 @@ export async function create(req, res) {
         const biller =
           existing.orderType === "PROCEDURE"
             ? (tx, order) =>
-                billProcedureOrder(tx, ORGANIZATION_ID, order, actor)
+                billAnyOrder(tx, orgId, order, actor)
             : null;
         const { order, before, charge, deduped } = await completeOrder(
-          ORGANIZATION_ID,
+          orgId,
           body.id,
           actor,
           { biller },
         );
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: "complete",
           entityType: "ipd.order",
           entityId: order.id,
@@ -2229,7 +2113,7 @@ export async function create(req, res) {
           },
         });
         if (charge && !deduped) {
-          await auditIpd(req, ORGANIZATION_ID, {
+          await auditIpd(req, orgId, {
             action: "charge",
             entityType: "ipd.charge",
             entityId: charge.id,
@@ -2250,30 +2134,16 @@ export async function create(req, res) {
           charge: charge || undefined,
         });
       } catch (e) {
-        return res
-          .status(e.status || 500)
-          .json({ success: false, code: e.code, error: e.message });
+        return svcErr(res, e);
       }
-    }
-
-    return res
-      .status(400)
-      .json({
-        error:
-          "Invalid resource. Use: ward, bed, admission, note, billing, charge, sync-beds, transfer, post-charge, vitals, note-v2, medication-administration, discharge-finalize, mark-exit, order, order-ack, order-start, order-complete, order-cancel",
-      });
-  } catch (err) {
-    console.error("inpatient create error:", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
 }
 
 // ─── PATCH ────────────────────────────────────────────────────────────────────
 
 export async function update(req, res) {
   try {
-    const ORGANIZATION_ID =
-      req.organizationId || process.env.ORGANIZATION_ID || "org-demo";
+    const orgId =
+      getOrgId(req);
     const resource = req.body.resource || req.query.resource;
     const id = req.body.id || req.query.id;
 
@@ -2297,10 +2167,94 @@ export async function update(req, res) {
         });
     }
 
-    // ── ipd-consultation PATCH ─────────────────────────────────────────────────
-    if (resource === "ipd-consultation") {
+    if (resource === "order-task")       return await updateOrderTask(req, res, orgId, id, updates);
+    if (resource === "ipd-consultation") return await updateConsultation(req, res, orgId, id, updates);
+    if (resource === "admission")        return await updateAdmission(req, res, orgId, id, updates);
+    if (resource === "bed")              return await updateBed(req, res, orgId, id, updates);
+    if (resource === "ward")             return await updateWard(req, res, orgId, id, updates);
+    if (resource === "vitals")           return await updateVitals(req, res, orgId, id, updates);
+
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid resource. Use: admission, bed, ward, vitals",
+      });
+  } catch (err) {
+    console.error("inpatient update error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ─── update helpers ──────────────────────────────────────────────────────────
+// One focused handler per PATCH resource (create()/getAll()-style dispatcher).
+// Same behaviour & JSON as the old inline blocks.
+
+// ── Phase 3C: tick a scheduled order task (Treatment Chart) ──
+async function updateOrderTask(req, res, orgId, id, updates) {
+      const { status, doneByName, resultValue, notes } = req.body;
+      if (!id)
+        return res.status(400).json({ success: false, error: "id required" });
+      const task = await db.orderTask.findFirst({
+        where: { id, organizationId: orgId },
+      });
+      if (!task)
+        return res.status(404).json({ success: false, error: "Task not found" });
+
+      const VALID = ["DUE", "DONE", "MISSED", "HELD", "SKIPPED"];
+      const newStatus = status && VALID.includes(status) ? status : "DONE";
+      const done = newStatus === "DONE";
+      const actor = { id: req.user?.id || req.user?.userId || null, name: req.user?.fullName || null };
+
+      // Bill PER OCCURRENCE: posting the charge when the nurse ticks DONE, and
+      // cancelling it if the occurrence is later un-ticked / marked not-done — so
+      // the bill reflects exactly the tests/doses actually performed.
+      // PROCEDURE bills on order-complete (billAnyOrder); exclude it here to
+      // avoid double billing. Lab/imaging/medicine bill per completed occurrence.
+      const BILLABLE = ["LAB", "RADIOLOGY", "PHARMACY"];
+      const { updated, charge } = await db.$transaction(async (tx) => {
+        const upd = await tx.orderTask.update({
+          where: { id: task.id },
+          data: {
+            status: newStatus,
+            doneAt: done ? new Date() : null,
+            doneById: done ? actor.id : null,
+            doneByName: done ? doneByName || actor.name : null,
+            resultValue: resultValue ?? task.resultValue,
+            notes: notes ?? task.notes,
+          },
+        });
+
+        let ch = null;
+        if (BILLABLE.includes(task.orderType)) {
+          const order = await tx.clinicalOrder.findFirst({
+            where: { id: task.orderId, organizationId: orgId },
+          });
+          if (order) {
+            if (done) {
+              const r = await billOrderTask(tx, orgId, order, task, actor);
+              ch = r.charge;
+            } else {
+              await cancelOrderTaskCharge(tx, orgId, order, task, `Task ${newStatus.toLowerCase()}`);
+            }
+          }
+        }
+        return { updated: upd, charge: ch };
+      });
+
+      await auditIpd(req, orgId, {
+        action: "update",
+        entityType: "ipd.order-task",
+        entityId: updated.id,
+        after: { itemName: updated.itemName, status: updated.status, chargeId: charge?.id || null, lineTotal: charge?.lineTotal },
+      });
+      return res.json({ success: true, data: updated, charge: charge || undefined });
+}
+
+// ── ipd-consultation PATCH ─────────────────────────────────────────────────
+async function updateConsultation(req, res, orgId, id, updates) {
       const consult = await db.ipdConsultation.findFirst({
-        where: { id, organizationId: ORGANIZATION_ID },
+        where: { id, organizationId: orgId },
       });
       if (!consult)
         return res.status(404).json({ success: false, error: "Consultation not found" });
@@ -2339,14 +2293,14 @@ export async function update(req, res) {
             },
           });
           const { charge, commission } = await billConsultation(
-            tx, ORGANIZATION_ID,
+            tx, orgId,
             { ...updated, completedAt },
             { id: req.user?.id, name: req.user?.fullName || req.user?.name },
           );
           return { updated, charge, commission };
         });
 
-        await auditIpd(req, ORGANIZATION_ID, {
+        await auditIpd(req, orgId, {
           action: "complete", entityType: "ipd.consultation", entityId: id,
           newValues: { status: "BILLED", chargeId: result.charge?.id },
         });
@@ -2375,12 +2329,26 @@ export async function update(req, res) {
           ...(followUpRequired  !== undefined && { followUpRequired: Boolean(followUpRequired) }),
         },
       });
-      return res.json({ success: true, data: updated });
-    }
 
-    if (resource === "admission") {
+      // Auto-cancel associated charge if the consultation is cancelled
+      if (newStatus === "CANCELLED" && consult.ipdChargeId) {
+        await db.ipdCharge.update({
+          where: { id: consult.ipdChargeId },
+          data: {
+            status: "CANCELLED",
+            cancelReason: "Consultation cancelled",
+            cancelledById: req.user?.id || req.user?.userId || null,
+            cancelledAt: new Date()
+          }
+        });
+      }
+
+      return res.json({ success: true, data: updated });
+}
+
+async function updateAdmission(req, res, orgId, id, updates) {
       // Whitelisted, org-scoped update — NO status/billing/org mass-assignment.
-      const admission = await ownedAdmission(ORGANIZATION_ID, id);
+      const admission = await ownedAdmission(orgId, id);
       if (!admission)
         return res
           .status(404)
@@ -2390,15 +2358,15 @@ export async function update(req, res) {
         data.expectedLengthOfStay = parseInt(data.expectedLengthOfStay) || null;
       const updated = await db.admission.update({ where: { id }, data });
       return res.json({ success: true, data: updated });
-    }
+}
 
-    if (resource === "bed") {
-      const bed = await ownedBed(ORGANIZATION_ID, id);
+async function updateBed(req, res, orgId, id, updates) {
+      const bed = await ownedBed(orgId, id);
       if (!bed)
         return res.status(404).json({ success: false, error: "Bed not found" });
       const data = pick(updates, BED_UPDATABLE);
       const updated = await db.bed.update({ where: { id }, data });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "update",
         entityType: "ipd.bed",
         entityId: id,
@@ -2406,10 +2374,10 @@ export async function update(req, res) {
         after: data,
       });
       return res.json({ success: true, data: updated });
-    }
+}
 
-    if (resource === "ward") {
-      if (!(await ownedWard(ORGANIZATION_ID, id)))
+async function updateWard(req, res, orgId, id, updates) {
+      if (!(await ownedWard(orgId, id)))
         return res
           .status(404)
           .json({ success: false, error: "Ward not found" });
@@ -2445,16 +2413,43 @@ export async function update(req, res) {
       if (wardData.capacity !== undefined) {
         const target = parseInt(wardData.capacity) || 0;
         const existing = updated.beds || [];
+
         if (target > existing.length) {
+          // Capacity badhi → utne naye (khaali) beds add karo
           const start = existing.length + 1;
           await db.bed.createMany({
             data: Array.from({ length: target - existing.length }, (_, i) => ({
-              organizationId: ORGANIZATION_ID,
+              organizationId: orgId,
               wardId: id,
               bedNumber: String(start + i),
               type: "Standard",
               status: "available",
             })),
+          });
+        } else if (target < existing.length) {
+          // Capacity ghati → SIRF khaali (available) extra beds hatao.
+          // occupied/reserved bed kabhi mat delete karo — patient us pe ho sakta hai.
+          const surplus = existing.length - target;
+          const removableIds = existing
+            .filter((b) => b.status === "available")
+            .sort((a, b) =>
+              String(b.bedNumber).localeCompare(String(a.bedNumber)),
+            ) // sabse aakhri (highest) bed number pehle hatao
+            .slice(0, surplus)
+            .map((b) => b.id);
+          if (removableIds.length) {
+            await db.bed.deleteMany({ where: { id: { in: removableIds } } });
+          }
+        }
+
+        // Capacity ko ACTUAL bed count ke barabar rakho — dono kabhi drift na karein.
+        // (Agar bahut saare bed occupied the to surplus poora nahi hata; tab bhi
+        //  capacity asli ginti dikhayegi, galat number nahi.)
+        const finalBedCount = await db.bed.count({ where: { wardId: id } });
+        if (finalBedCount !== target) {
+          await db.ward.update({
+            where: { id },
+            data: { capacity: finalBedCount },
           });
         }
       }
@@ -2465,15 +2460,12 @@ export async function update(req, res) {
       });
 
       return res.json({ success: true, data: wardWithBeds });
-    }
+}
 
-    // (removed) PATCH resource=generate-bill — legacy bed-day biller; replaced by
-    // resource=bill-finalize (Bill/IpdCharge). Had zero callers. Deleted 2026-06-15.
-
-    // Vitals correction (nurse-only via RBAC). Audited before/after; NEWS2 recomputed.
-    if (resource === "vitals") {
+// Vitals correction (nurse-only via RBAC). Audited before/after; NEWS2 recomputed.
+async function updateVitals(req, res, orgId, id, updates) {
       const existing = await db.vitalsRecord.findFirst({
-        where: { id, organizationId: ORGANIZATION_ID },
+        where: { id, organizationId: orgId },
       });
       if (!existing)
         return res
@@ -2514,7 +2506,7 @@ export async function update(req, res) {
       data.newsScore = news.score;
       data.newsRisk = news.risk;
       const updated = await db.vitalsRecord.update({ where: { id }, data });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "update",
         entityType: "ipd.vitals",
         entityId: id,
@@ -2528,27 +2520,13 @@ export async function update(req, res) {
         after: { ...data },
       });
       return res.json({ success: true, data: updated });
-    }
-
-    // Phase 3: progress a housekeeping task (drives bed turnover)
-    return res
-      .status(400)
-      .json({
-        error:
-          "Invalid resource. Use: admission, bed, ward, vitals",
-      });
-  } catch (err) {
-    console.error("inpatient update error:", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
 }
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 
 export async function remove(req, res) {
   try {
-    const ORGANIZATION_ID =
-      req.organizationId || process.env.ORGANIZATION_ID || "org-demo";
+    const orgId = getOrgId(req);
     const resource = req.body.resource || req.query.resource;
     const id = req.body.id || req.query.id;
 
@@ -2562,12 +2540,25 @@ export async function remove(req, res) {
         });
     }
 
-    if (resource === "ward") {
-      if (!(await ownedWard(ORGANIZATION_ID, id)))
+    if (resource === "ward")             return await removeWard(req, res, orgId, id);
+    if (resource === "bed")              return await removeBed(req, res, orgId, id);
+    if (resource === "ipd-consultation") return await removeConsultation(req, res, orgId, id);
+
+    return res.status(400).json({ error: "Invalid resource. Use: ward, bed, ipd-consultation" });
+  } catch (err) {
+    console.error("inpatient remove error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ─── remove helpers ──────────────────────────────────────────────────────────
+
+async function removeWard(req, res, orgId, id) {
+      if (!(await ownedWard(orgId, id)))
         return res.status(404).json({ error: "Ward not found" });
       const activeAdmissions = await db.admission.count({
         where: {
-          organizationId: ORGANIZATION_ID,
+          organizationId: orgId,
           status: "admitted",
           bed: { wardId: id },
         },
@@ -2581,38 +2572,38 @@ export async function remove(req, res) {
 
       await db.$transaction([
         db.bed.deleteMany({
-          where: { wardId: id, organizationId: ORGANIZATION_ID },
+          where: { wardId: id, organizationId: orgId },
         }),
         db.ward.delete({ where: { id } }),
       ]);
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "delete",
         entityType: "ipd.ward",
         entityId: id,
       });
 
       return res.json({ success: true });
-    }
+}
 
-    if (resource === "bed") {
-      const bed = await ownedBed(ORGANIZATION_ID, id);
+async function removeBed(req, res, orgId, id) {
+      const bed = await ownedBed(orgId, id);
       if (!bed) return res.status(404).json({ error: "Bed not found" });
       if (bed.status === "occupied")
         return res.status(400).json({ error: "Cannot delete an occupied bed" });
       await db.bed.delete({ where: { id } });
-      await auditIpd(req, ORGANIZATION_ID, {
+      await auditIpd(req, orgId, {
         action: "delete",
         entityType: "ipd.bed",
         entityId: id,
       });
 
       return res.json({ success: true });
-    }
+}
 
-    // ── ipd-consultation DELETE (cancel) ──────────────────────────────────────
-    if (resource === "ipd-consultation") {
+// ── ipd-consultation DELETE (cancel) ──────────────────────────────────────
+async function removeConsultation(req, res, orgId, id) {
       const consult = await db.ipdConsultation.findFirst({
-        where: { id, organizationId: ORGANIZATION_ID },
+        where: { id, organizationId: orgId },
       });
       if (!consult)
         return res.status(404).json({ success: false, error: "Consultation not found" });
@@ -2624,11 +2615,124 @@ export async function remove(req, res) {
         data: { status: "CANCELLED" },
       });
       return res.json({ success: true });
+}
+
+// ============================================================================
+// TIMELINE
+// ============================================================================
+export async function getPatientTimeline(req, res) {
+  try {
+    const orgId = getOrgId(req);
+    const { patientId } = req.params;
+
+    if (!patientId) {
+      return res.status(400).json({ success: false, error: "Patient ID is required" });
     }
 
-    return res.status(400).json({ error: "Invalid resource. Use: ward, bed, ipd-consultation" });
+    // 1. Fetch all admissions for this patient
+    const admissions = await db.admission.findMany({
+      where: { organizationId: orgId, patientId },
+      include: {
+        bed: { include: { ward: true } },
+        // Doctor names straight from the relation (no manual lookup).
+        admittingDoctor: { select: { fullName: true } },
+        dischargeDoctor: { select: { fullName: true } },
+      }
+    });
+
+    const admissionIds = admissions.map(a => a.id);
+
+    // 2. Fetch all related events in parallel
+    const [notes, orders, vitals, meds] = await Promise.all([
+      db.clinicalNote.findMany({ where: { admissionId: { in: admissionIds } } }),
+      db.clinicalOrder.findMany({ where: { admissionId: { in: admissionIds } } }),
+      db.vitalsRecord.findMany({ where: { admissionId: { in: admissionIds } } }),
+      db.medicationAdministration.findMany({ where: { admissionId: { in: admissionIds } } })
+    ]);
+
+    // 3. Normalize every source into one chronological timeline (newest first).
+    //    Each source has its own small mapper (defined below) — easy to read & extend.
+    const timeline = [
+      ...admissions.flatMap(a => admissionTimelineEvents(a)),
+      ...notes.map(noteTimelineEvent),
+      ...orders.map(orderTimelineEvent),
+      ...vitals.map(vitalsTimelineEvent),
+      ...meds.map(medTimelineEvent),
+    ];
+    timeline.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    return res.json({ success: true, data: timeline });
   } catch (err) {
-    console.error("inpatient remove error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("getPatientTimeline error:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch timeline" });
   }
 }
+
+// ─── patient-timeline helpers ────────────────────────────────────────────────
+// Each builder turns one DB row into a timeline event (pure, easy to extend).
+
+// One admission → an "admitted" event, plus a "discharged" event if it ended.
+// Doctor names come from the included relations (admittingDoctor / dischargeDoctor).
+function admissionTimelineEvents(a) {
+  const events = [{
+    id: `adm-${a.id}-start`,
+    type: 'ADMISSION_START',
+    timestamp: a.admissionDate,
+    title: `Admitted to ${a.bed?.ward?.name || 'Ward'}`,
+    description: `Admission Type: ${a.admissionType}. Diagnosis: ${a.admissionDiagnosis || 'N/A'}`,
+    user: a.admittingDoctor?.fullName || 'System',
+    metadata: { admissionId: a.id }
+  }];
+  if (a.dischargeDate) {
+    events.push({
+      id: `adm-${a.id}-end`,
+      type: 'DISCHARGE',
+      timestamp: a.dischargeDate,
+      title: `Discharged`,
+      description: `Status: ${a.status}`,
+      user: a.dischargeDoctor?.fullName || 'System',
+      metadata: { admissionId: a.id }
+    });
+  }
+  return events;
+}
+
+const noteTimelineEvent = (n) => ({
+  id: `note-${n.id}`,
+  type: 'CLINICAL_NOTE',
+  timestamp: n.authoredAt,
+  title: `${n.noteType || 'Clinical Note'}`,
+  description: n.body,
+  user: n.authorName || 'Doctor',
+  metadata: { admissionId: n.admissionId, id: n.id }
+});
+
+const orderTimelineEvent = (o) => ({
+  id: `order-${o.id}`,
+  type: 'ORDER',
+  timestamp: o.orderedAt || o.createdAt,
+  title: `Order: ${o.itemName}`,
+  description: `Type: ${o.orderType} | Status: ${o.status} ${o.route ? '| Route: ' + o.route : ''} ${o.dosage ? '| Dose: ' + o.dosage : ''}`,
+  user: o.orderedByName || 'Doctor',
+  metadata: { admissionId: o.admissionId, id: o.id, status: o.status }
+});
+
+const vitalsTimelineEvent = (v) => ({
+  id: `vital-${v.id}`,
+  type: 'VITALS',
+  timestamp: v.recordedAt,
+  title: `Vitals Recorded`,
+  description: `Temp: ${v.tempC != null ? Math.round((v.tempC * 9 / 5 + 32) * 10) / 10 : '--'}°F, BP: ${v.systolicBp || '--'}/${v.diastolicBp || '--'}, HR: ${v.heartRate || '--'}, O2: ${v.spo2 || '--'}%`,
+  user: v.recordedByName || 'Nurse',
+  metadata: { admissionId: v.admissionId, id: v.id }
+});
+
+const medTimelineEvent = (m) => ({
+  id: `med-${m.id}`,
+  type: 'MEDICATION',
+  timestamp: m.administeredAt || m.scheduledAt || m.createdAt,
+  title: `Medication: ${m.drugName}`,
+  description: `Status: ${m.status} | Dose: ${m.dosage || '--'} | Route: ${m.route || '--'} ${m.reason ? '| Reason: ' + m.reason : ''}`,
+  user: m.nurseName || 'Nurse',
+  metadata: { admissionId: m.admissionId, id: m.id, status: m.status }
+});

@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 /**
  * Get all fee slabs for a doctor or organization
@@ -6,7 +7,7 @@ import { db } from '../config/db.js'
  */
 export async function getSlabs(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { doctorId } = req.query
 
     const where = { organizationId: ORG_ID }
@@ -32,7 +33,7 @@ export async function getSlabs(req, res, next) {
  */
 export async function createSlab(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { doctorId, fromDays, toDays, feeAmount, isActive, notes } = req.body
 
     // Validate inputs
@@ -99,7 +100,7 @@ export async function createSlab(req, res, next) {
  */
 export async function updateSlab(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { id } = req.params
     const { fromDays, toDays, feeAmount, isActive, notes } = req.body
 
@@ -165,7 +166,7 @@ export async function updateSlab(req, res, next) {
  */
 export async function deleteSlab(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { id } = req.params
 
     // Verify slab belongs to this org
@@ -192,7 +193,7 @@ export async function deleteSlab(req, res, next) {
  */
 export async function calculateFee(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { doctorId, patientId, date } = req.query
 
     if (!doctorId || !patientId) {

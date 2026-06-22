@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import whatsapp from '../services/whatsappService.js'
 import * as tpl from '../services/messageTemplates.js'
 import { startPharmacySession } from './whatsappBotController.js'
@@ -53,7 +54,7 @@ export async function sendPrescriptionNotification(req, res) {
     const { prescriptionId, consultationFee = 0, invoiceId } = req.body
     if (!prescriptionId) return res.status(400).json({ success: false, error: 'prescriptionId required' })
 
-    const reqOrgId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const reqOrgId = getOrgId(req)
     const [prescription, org] = await Promise.all([
       db.prescription.findUnique({
         where: { id: prescriptionId },

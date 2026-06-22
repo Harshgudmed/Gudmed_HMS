@@ -31,13 +31,13 @@ async function addMultipleAppointments() {
 
     const orgId = 'org-demo'
 
-    // Get the default doctor/user
-    const doctorUser = await db.user.findFirst({
-      where: { organizationId: orgId, isActive: true }
+    // Get all doctors
+    const doctors = await db.user.findMany({
+      where: { organizationId: orgId, isActive: true, role: 'doctor' }
     })
 
-    if (!doctorUser) {
-      console.error('❌ No active user found')
+    if (!doctors || doctors.length === 0) {
+      console.error('❌ No active doctors found')
       process.exit(1)
     }
 
@@ -78,7 +78,7 @@ async function addMultipleAppointments() {
             data: {
               organizationId: orgId,
               patientId: patient.id,
-              doctorId: doctorUser.id,
+              doctorId: getRandomItem(doctors).id,
               appointmentDate,
               appointmentTime,
               appointmentType,
@@ -87,8 +87,7 @@ async function addMultipleAppointments() {
               chiefComplaint: getRandomItem(chiefComplaints),
               notes: `${department} - ${appointmentType === 'new_patient' ? 'New Consultation' : appointmentType === 'follow_up' ? 'Follow-up Visit' : 'Emergency Visit'}`,
               consultationFee: getRandomItem([500, 800, 1000, 1500, 2000]),
-              durationMinutes: 30,
-            },
+              },
           })
 
           totalAppointmentsCreated++

@@ -1,4 +1,5 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 import { createPrescriptionSchema, updatePrescriptionSchema } from '../validations/prescription.validation.js'
 import { getPagination, paginationMeta, handleServiceError, makeError } from '../utils.js'
 import { recordStockChange, consumeFromBatches, findShortages, insufficientStockError } from '../stockService.js'
@@ -10,7 +11,7 @@ const DOCTOR_SELECT  = { id: true, fullName: true }
 
 export async function list(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { status, patientId, doctorId, sortBy, sortOrder } = req.query
     const { page, limit, skip } = getPagination(req.query)
 
@@ -45,7 +46,7 @@ export async function list(req, res, next) {
 
 export async function getById(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const prescription = await db.prescription.findFirst({
       where: { id: req.params.id, organizationId: ORGANIZATION_ID },
       include: {
@@ -63,7 +64,7 @@ export async function getById(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = createPrescriptionSchema.parse(req.body)
 
     const data = await db.prescription.create({
@@ -91,7 +92,7 @@ export async function create(req, res, next) {
 //   - body { allowPartial: true }: dispense what's available, mark partially_dispensed.
 export async function dispense(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const allowPartial = req.body?.allowPartial === true
     const createdById = req.user?.userId ?? null
 
@@ -162,7 +163,7 @@ export async function dispense(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = updatePrescriptionSchema.parse(req.body)
 
     const existing = await db.prescription.findFirst({

@@ -1,4 +1,5 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 const patientSelect = { id: true, firstName: true, middleName: true, lastName: true, mrn: true, phonePrimary: true }
 
@@ -147,14 +148,14 @@ async function updateClaim(req, res) {
 
 export async function getAll(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     return getCases(req, res, ORG_ID) // only cases are listed (claims come nested)
   } catch (err) { next(err) }
 }
 
 export async function create(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     if (req.query.resource === 'claims') return createClaim(req, res, ORG_ID)
     return createCase(req, res, ORG_ID)
   } catch (err) { next(err) }
@@ -162,7 +163,7 @@ export async function create(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     if (req.query.resource === 'claims') return updateClaim(req, res)
     return updateCase(req, res, ORG_ID)
   } catch (err) { next(err) }

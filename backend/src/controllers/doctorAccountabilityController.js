@@ -1,9 +1,10 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 import { scopedDoctorId } from '../utils/scope.js'
 
 export async function handleGet(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { resource, doctorId, status, period } = req.query
 
     // A logged-in doctor only ever sees their own accountability data.
@@ -97,7 +98,7 @@ export async function handleGet(req, res, next) {
 
 export async function handlePost(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { resource } = req.query
 
     if (resource === 'config') {

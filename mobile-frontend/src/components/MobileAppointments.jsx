@@ -307,7 +307,7 @@ function BookAppointmentSheet({ brandColor, onClose, onCreated }) {
       const res = await client.post('/appointments', {
         patientId: patient.id, doctorId,
         appointmentDate: new Date(date).toISOString(), appointmentTime: time,
-        durationMinutes: 30, appointmentType: type, priority: 'normal',
+        appointmentType: type, priority: 'normal',
         notes: notes || undefined,
       })
       if (res.success) { toast.success('Appointment booked'); onCreated?.() }

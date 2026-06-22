@@ -1,8 +1,9 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 
 export async function getStats(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today)

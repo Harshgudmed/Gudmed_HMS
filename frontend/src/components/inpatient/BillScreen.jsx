@@ -242,12 +242,51 @@ ${rows || '<tr><td colspan="5" style="text-align:center;color:#999">No service l
 
       {/* Service line items (IpdCharge) */}
       <div>
-        <p className="font-semibold text-sm mb-1">Service Charges</p>
+        <p className="font-semibold text-sm mb-1">Service Charges Details</p>
         {svcLines.length === 0 ? <p className="text-sm text-gray-400 py-3 text-center border rounded">No service charges yet</p> : (
-          <Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Group</TableHead><TableHead>Unit</TableHead><TableHead>Qty</TableHead><TableHead>Tax</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
-            <TableBody>{svcLines.map((c) => (
-              <TableRow key={c.id}><TableCell className="text-sm">{c.description}</TableCell><TableCell className="text-xs text-gray-500">{c.serviceGroup}</TableCell><TableCell className="text-sm">{inr(c.unitPrice)}</TableCell><TableCell className="text-sm">{c.quantity}</TableCell><TableCell className="text-xs text-gray-500">{c.taxPct ? `${c.taxPct}%` : '—'}</TableCell><TableCell className="text-sm text-right font-medium">{inr(c.lineTotal ?? c.amount)}</TableCell></TableRow>
-            ))}</TableBody></Table>
+          <div className="space-y-4">
+            {Object.entries(
+              svcLines.reduce((acc, c) => {
+                const group = c.serviceGroup || 'OTHER';
+                if (!acc[group]) acc[group] = [];
+                acc[group].push(c);
+                return acc;
+              }, {})
+            ).map(([groupName, lines]) => (
+              <div key={groupName} className="border rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-3 py-2 border-b flex justify-between items-center">
+                  <span className="font-semibold text-sm text-gray-700 capitalize">
+                    {groupName.replace(/_/g, ' ').toLowerCase()} Charges
+                  </span>
+                  <span className="text-xs font-bold text-gray-500">
+                    {inr(lines.reduce((sum, l) => sum + (l.lineTotal ?? l.amount ?? 0), 0))}
+                  </span>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-white hover:bg-white">
+                      <TableHead className="w-[40%]">Item Description</TableHead>
+                      <TableHead>Unit Rate</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead>Tax</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lines.map((c) => (
+                      <TableRow key={c.id}>
+                        <TableCell className="text-sm font-medium">{c.description}</TableCell>
+                        <TableCell className="text-sm text-gray-600">{inr(c.unitPrice)}</TableCell>
+                        <TableCell className="text-sm text-gray-600">{c.quantity}</TableCell>
+                        <TableCell className="text-xs text-gray-400">{c.taxPct ? `${c.taxPct}%` : '—'}</TableCell>
+                        <TableCell className="text-sm text-right font-semibold">{inr(c.lineTotal ?? c.amount)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

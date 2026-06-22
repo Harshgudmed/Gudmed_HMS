@@ -1,4 +1,5 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 import { createBatchSchema, updateBatchSchema } from '../validations/batch.validation.js'
 import { getPagination, paginationMeta, handleServiceError, makeError } from '../utils.js'
 import { recordStockChange } from '../stockService.js'
@@ -7,7 +8,7 @@ const SORTABLE_FIELDS = ['batchNumber', 'expiryDate', 'quantityRemaining', 'stat
 
 export async function list(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { drugId, status, search, sortBy, sortOrder } = req.query
     const { page, limit, skip } = getPagination(req.query)
 
@@ -46,7 +47,7 @@ export async function list(req, res, next) {
 
 export async function getById(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const batch = await db.pharmacyBatch.findFirst({
       where: { id: req.params.id, organizationId: ORGANIZATION_ID },
       include: {
@@ -63,7 +64,7 @@ export async function getById(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = createBatchSchema.parse(req.body)
 
     const data = await db.$transaction(async (tx) => {
@@ -114,7 +115,7 @@ export async function create(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = updateBatchSchema.parse(req.body)
 
     const existing = await db.pharmacyBatch.findFirst({
@@ -138,7 +139,7 @@ export async function update(req, res, next) {
 // Soft delete: sets status to 'recalled' and decrements drug stock — wrapped in transaction
 export async function remove(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const data = await db.$transaction(async (tx) => {
       const batch = await tx.pharmacyBatch.findFirst({
         where: { id: req.params.id, organizationId: ORGANIZATION_ID },

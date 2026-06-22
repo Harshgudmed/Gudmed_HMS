@@ -1,8 +1,9 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 export async function getAnalytics(req, res, next) {
   try {
-    const ORG_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORG_ID = getOrgId(req)
     const { resource, dateFrom, dateTo } = req.query
 
     if (resource === 'dashboard') {

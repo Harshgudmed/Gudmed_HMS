@@ -104,7 +104,7 @@ async function seedConsultations() {
 
     // Get all doctors/users
     const allUsers = await db.user.findMany({
-      where: { organizationId: orgId, isActive: true },
+      where: { organizationId: orgId, isActive: true, role: 'doctor' },
     })
 
     if (allUsers.length === 0) {

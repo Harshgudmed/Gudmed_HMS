@@ -1,9 +1,10 @@
 import { db } from '../config/db.js'
+import { getOrgId } from "../lib/reqContext.js";
 
 // ── CRM users (for the "assign to" dropdown) ────────────────────────────────────
 export async function getCrmUsers(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const users = await db.user.findMany({
       where: { organizationId, role: 'patient_crm', isActive: true },
       select: { id: true, fullName: true, email: true },
@@ -16,7 +17,7 @@ export async function getCrmUsers(req, res, next) {
 // ── Assign a patient to a CRM user (or unassign with crmUserId=null) ─────────────
 export async function assignPatient(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const { patientId, crmUserId } = req.body
     if (!patientId) return res.status(400).json({ success: false, error: 'patientId is required' })
 
@@ -43,7 +44,7 @@ export async function assignPatient(req, res, next) {
 // body: { patientId, departments: ['lab','radiology','ipd','pharmacy'] }
 export async function routePatient(req, res, next) {
   try {
-    const organizationId = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const organizationId = getOrgId(req)
     const requestedById = req.user?.userId
     const { patientId, departments } = req.body
     if (!patientId || !Array.isArray(departments) || departments.length === 0) {

@@ -294,7 +294,6 @@ export default function AppointmentsModule() {
       opdServiceId: "",
       appointmentDate: new Date(),
       appointmentTime: "",
-      durationMinutes: 30,
       appointmentType: "new_patient",
       priority: "normal",
       consultationFee: "",
@@ -308,7 +307,6 @@ export default function AppointmentsModule() {
       doctorId: "",
       appointmentDate: new Date(),
       appointmentTime: "",
-      durationMinutes: 30,
       appointmentType: "new_patient",
       priority: "normal",
       status: "scheduled",
@@ -500,7 +498,6 @@ export default function AppointmentsModule() {
         doctorId: selectedAppointment.doctorId,
         appointmentDate: rescheduleDate.toISOString(),
         appointmentTime: rescheduleTime,
-        durationMinutes: selectedAppointment.durationMinutes,
         appointmentType: selectedAppointment.appointmentType || "new_patient",
         chiefComplaint: selectedAppointment.chiefComplaint,
         notes: selectedAppointment.notes,
@@ -526,7 +523,6 @@ export default function AppointmentsModule() {
       doctorId: apt.doctorId || "",
       appointmentDate: parseDate(apt.appointmentDate),
       appointmentTime: apt.appointmentTime,
-      durationMinutes: apt.durationMinutes,
       appointmentType: apt.appointmentType || "new_patient",
       priority: "normal",
       status: apt.status,
@@ -545,7 +541,6 @@ export default function AppointmentsModule() {
         doctorId: data.doctorId,
         appointmentDate: data.appointmentDate.toISOString(),
         appointmentTime: data.appointmentTime,
-        durationMinutes: data.durationMinutes,
         appointmentType: data.appointmentType,
         chiefComplaint: data.chiefComplaint,
         notes: data.notes,
@@ -631,7 +626,6 @@ export default function AppointmentsModule() {
         ...(data.departmentId ? { departmentId: data.departmentId } : {}),
         appointmentDate: data.appointmentDate.toISOString(),
         appointmentTime: data.appointmentTime,
-        durationMinutes: data.durationMinutes,
         appointmentType: data.appointmentType,
         notes: data.notes,
         priority: data.priority,
@@ -958,37 +952,6 @@ export default function AppointmentsModule() {
                     />
                   </div>
 
-                  {/* Duration */}
-                  <FormField
-                    control={form.control}
-                    name="durationMinutes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Duration</FormLabel>
-                        <Select
-                          onValueChange={(v) => field.onChange(parseInt(v))}
-                          defaultValue={String(field.value)}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {DURATION_OPTIONS.map((opt) => (
-                              <SelectItem
-                                key={opt.value}
-                                value={String(opt.value)}
-                              >
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
 
                   {/* Type & Priority */}
                   <div className="grid grid-cols-2 gap-4">
@@ -1294,9 +1257,6 @@ export default function AppointmentsModule() {
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono text-sm font-medium">
                                     {apt.appointmentTime}
-                                  </span>
-                                  <span className="text-xs text-gray-500">
-                                    {apt.durationMinutes}m
                                   </span>
                                 </div>
                                 <Badge
@@ -1641,9 +1601,6 @@ export default function AppointmentsModule() {
                                 <div className="font-mono font-medium">
                                   {apt.appointmentTime}
                                 </div>
-                                <div className="text-xs text-gray-500">
-                                  {apt.durationMinutes} min
-                                </div>
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
@@ -1927,9 +1884,6 @@ export default function AppointmentsModule() {
                                 <div className="text-center">
                                   <div className="font-mono text-lg font-bold">
                                     {apt.appointmentTime}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {apt.durationMinutes} min
                                   </div>
                                 </div>
                                 <Avatar className="h-10 w-10">
@@ -2499,36 +2453,7 @@ export default function AppointmentsModule() {
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={editForm.control}
-                  name="durationMinutes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Duration</FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(parseInt(v))}
-                        value={String(field.value)}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {DURATION_OPTIONS.map((opt) => (
-                            <SelectItem
-                              key={opt.value}
-                              value={String(opt.value)}
-                            >
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+
                 <FormField
                   control={editForm.control}
                   name="priority"

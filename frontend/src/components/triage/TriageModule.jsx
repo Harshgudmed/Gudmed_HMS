@@ -592,7 +592,7 @@ export default function TriageModule() {
                 <h4 className="font-medium mb-3">Vital Signs (Optional)</h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {[
-                    { name: 'temperature',           label: 'Temperature (°C)',  placeholder: '36.5', step: '0.1' },
+                    { name: 'temperature',           label: 'Temperature (°F)',  placeholder: '98.6', step: '0.1' },
                     { name: 'bloodPressureSystolic',  label: 'BP Systolic (mmHg)',placeholder: '120' },
                     { name: 'bloodPressureDiastolic', label: 'BP Diastolic (mmHg)',placeholder: '80' },
                     { name: 'pulseRate',              label: 'Pulse Rate (bpm)',  placeholder: '72' },

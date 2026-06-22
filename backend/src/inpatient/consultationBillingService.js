@@ -18,7 +18,7 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100
  *
  * @param {object} tx       - Prisma transaction client
  * @param {string} orgId    - organizationId
- * @param {object} consult  - IpdConsultation row (must have: id, admissionId, consultingDoctorId, chargeItemCode, completedAt)
+ * @param {object} consult  - IpdConsultation row (must have: id, admissionId, consultingDoctorId)
  * @param {object} actor    - { id, name } of the user performing the action
  */
 export async function billConsultation(tx, orgId, consult, actor) {
@@ -30,8 +30,8 @@ export async function billConsultation(tx, orgId, consult, actor) {
   if (existing) return { charge: existing, commission: null, deduped: true }
 
   // ── 2. RESOLVE CHARGE MASTER ITEM ────────────────────────────────────────────
-  // Use chargeItemCode stored on consultation, fall back to generic.
-  const itemCode = consult.chargeItemCode || 'CONSULT-SPECIALIST'
+  // Fixed generic consultation charge item code
+  const itemCode = 'CONSULT-SPECIALIST'
 
   // ── 3. PRICE VIA EXISTING TARIFF ENGINE (resolvePrice — NOT modified) ─────────
   // Reads: PatientTariff(locked plan) + BedOccupancy(current category) + TariffRule
@@ -40,7 +40,7 @@ export async function billConsultation(tx, orgId, consult, actor) {
     priced = await resolvePrice(orgId, consult.admissionId, {
       itemCode,
       serviceGroup: 'DOCTOR_VISIT',
-      serviceDate:  consult.completedAt || new Date(),
+      serviceDate:  consult.createdAt || new Date(),
     })
   } catch (e) {
     // If ChargeMaster code not found, fall back to ad-hoc base price of 0
@@ -91,7 +91,7 @@ export async function billConsultation(tx, orgId, consult, actor) {
     status:         'ACTIVE',
     postedById:     actor?.id   || null,
     postedByName:   actor?.name || null,
-    serviceDate:    consult.completedAt ? new Date(consult.completedAt) : new Date(),
+    serviceDate:    consult.createdAt ? new Date(consult.createdAt) : new Date(),
     sourceModule:   'IPD_CONSULTATION',
     sourceRef:      consult.id,    // ← idempotency key
   }

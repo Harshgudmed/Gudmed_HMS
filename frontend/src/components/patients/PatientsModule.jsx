@@ -550,7 +550,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;background
     <div class="vitals-row">
       <div class="vt-cell"><div class="vt-lbl">BP (MMHG)</div><div class="vt-val"></div></div>
       <div class="vt-cell"><div class="vt-lbl">PULSE (BPM)</div><div class="vt-val"></div></div>
-      <div class="vt-cell"><div class="vt-lbl" style="color:#c00">TEMP (°C)</div><div class="vt-val"></div></div>
+      <div class="vt-cell"><div class="vt-lbl" style="color:#c00">TEMP (°F)</div><div class="vt-val"></div></div>
       <div class="vt-cell"><div class="vt-lbl">RR (/MIN)</div><div class="vt-val"></div></div>
       <div class="vt-cell"><div class="vt-lbl">SPO₂ (%)</div><div class="vt-val"></div></div>
       <div class="vt-cell"><div class="vt-lbl">WT (KG)</div><div class="vt-val"></div></div>

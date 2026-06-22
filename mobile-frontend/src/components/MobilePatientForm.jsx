@@ -91,8 +91,7 @@ export default function PatientFormSheet({ brandColor = '#2E4168', patient, onCl
             patientId: saved.id, doctorId: f.doctor,
             ...(f.department ? { departmentId: f.department } : {}),
             appointmentDate: new Date(f.appointmentDate).toISOString(),
-            appointmentTime: f.appointmentTime || '09:00', durationMinutes: 30,
-            appointmentType: TYPE_MAP[f.appointmentType] || 'new_patient',
+            appointmentTime: f.appointmentTime || '09:00', appointmentType: TYPE_MAP[f.appointmentType] || 'new_patient',
             priority: PRIORITY_MAP[f.priority] || 'normal',
             consultationFee: parseFloat(f.consultationFee) || undefined,
           })

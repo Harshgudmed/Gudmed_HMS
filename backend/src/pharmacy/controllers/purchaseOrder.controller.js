@@ -1,4 +1,5 @@
 import { db } from '../../config/db.js'
+import { getOrgId } from "../../lib/reqContext.js";
 import {
   createPurchaseOrderSchema,
   updatePurchaseOrderSchema,
@@ -10,7 +11,7 @@ const SORTABLE_FIELDS = ['orderDate', 'status', 'supplierName', 'totalAmount', '
 
 export async function list(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const { status, search, sortBy, sortOrder } = req.query
     const { page, limit, skip } = getPagination(req.query)
 
@@ -40,7 +41,7 @@ export async function list(req, res, next) {
 
 export async function getById(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const order = await db.pharmacyPurchaseOrder.findFirst({
       where: { id: req.params.id, organizationId: ORGANIZATION_ID },
     })
@@ -54,7 +55,7 @@ export async function getById(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = createPurchaseOrderSchema.parse(req.body)
 
     const now = new Date()
@@ -89,7 +90,7 @@ export async function create(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = updatePurchaseOrderSchema.parse(req.body)
 
     const existing = await db.pharmacyPurchaseOrder.findFirst({
@@ -117,7 +118,7 @@ export async function update(req, res, next) {
 // Creates batches and increments stock for each item — wrapped in transaction
 export async function receive(req, res, next) {
   try {
-    const ORGANIZATION_ID = req.organizationId || process.env.ORGANIZATION_ID || 'org-demo'
+    const ORGANIZATION_ID = getOrgId(req)
     const parsed = receivePurchaseOrderSchema.parse(req.body)
 
     const data = await db.$transaction(async (tx) => {

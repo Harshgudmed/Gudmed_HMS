@@ -210,8 +210,7 @@ async function seed500Patients() {
             chiefComplaint: getRandomItem(chiefComplaints),
             notes: `Patient ${firstName} ${lastName} (Age: ${age}) - ${appointmentDept}`,
             consultationFee: getRandomItem([500, 800, 1000, 1500, 2000]),
-            durationMinutes: 30,
-          },
+            },
         })
 
         appointmentCount++
@@ -230,6 +229,7 @@ async function seed500Patients() {
               timeOfDeath: `${Math.floor(Math.random() * 24)}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
               causeOfDeath: getRandomItem(['Natural Causes', 'Heart Failure', 'Respiratory Failure', 'Complications']),
               placeOfDeath: 'Hospital',
+              sex: patient.gender,
               issuedAt: deathDate,
               isActive: true,
             },
