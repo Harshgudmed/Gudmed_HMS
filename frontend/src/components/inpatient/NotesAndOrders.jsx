@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ClipboardList, FlaskConical, Stethoscope, IndianRupee } from 'lucide-react'
+import { ClipboardList, FlaskConical, Stethoscope, FileText, IndianRupee } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ProgressNotesPanel from '@/components/inpatient/ProgressNotesPanel'
 import ClinicalOrdersTab from '@/components/inpatient/ClinicalOrdersTab'
 import ConsultationsTab from '@/components/inpatient/ConsultationsTab'
+import ReportsTab from '@/components/inpatient/ReportsTab'
 import client from '@/api/client'
 
 // Combined doctor workspace using sub-tabs to prevent vertical scroll fatigue
@@ -73,6 +74,9 @@ export default function NotesAndOrders({ admitted = [] }) {
           <TabsTrigger value="consultations" className="gap-2 data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm">
             <Stethoscope className="h-4 w-4" /> Specialist Consultations
           </TabsTrigger>
+          <TabsTrigger value="reports" className="gap-2 data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm">
+            <FileText className="h-4 w-4" /> Reports
+          </TabsTrigger>
         </TabsList>
 
         <div className="mt-4">
@@ -94,6 +98,10 @@ export default function NotesAndOrders({ admitted = [] }) {
             ) : (
               <p className="text-sm text-gray-500 py-10 text-center">Select a patient to view consultations.</p>
             )}
+          </TabsContent>
+
+          <TabsContent value="reports" className="m-0 border-none p-0 outline-none">
+            <ReportsTab admissionId={selectedId} />
           </TabsContent>
         </div>
       </Tabs>

@@ -26,6 +26,14 @@ const ROLE_VISUAL = {
   housekeeping:         { Icon: Sparkles,      color: '#16a34a' },
 }
 
+// Demo credentials shown on the login screen (so clients don't have to ask).
+// Falls back to the admin account for any role without its own demo login.
+const DEMO_ACCOUNTS = {
+  admin:       { email: 'admin@gudmed.in',       password: 'Gudmed@123' },
+  doctor:      { email: 'priya@gudmed.in',       password: 'Gudmed@123' },
+  patient_crm: { email: 'coordinator@gudmed.in', password: 'Gudmed@123' },
+}
+
 // Per-role login page mounted at /:role/login. The hospital is resolved from the
 // account on the backend, so we only ask for email + password.
 export default function RoleLogin() {
@@ -67,6 +75,7 @@ export default function RoleLogin() {
   const roleLabel = ROLES[role].label
   const visual = ROLE_VISUAL[role] || { Icon: UserCog, color: '#2563eb' }
   const RoleIcon = visual.Icon
+  const demo = DEMO_ACCOUNTS[role] || DEMO_ACCOUNTS.admin
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -169,6 +178,18 @@ export default function RoleLogin() {
               Sign in
             </Button>
           </form>
+
+          {/* Demo credentials — visible so clients can sign in without asking. */}
+          <button
+            type="button"
+            onClick={() => { setEmail(demo.email); setPassword(demo.password) }}
+            className="mt-4 w-full rounded-lg border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2 text-left transition hover:bg-blue-50"
+          >
+            <span className="block text-[11px] font-semibold uppercase tracking-wide text-blue-700">🔑 Demo login — tap to fill</span>
+            <span className="mt-1 block text-xs text-gray-700">
+              {demo.email} · <span className="font-mono font-medium">{demo.password}</span>
+            </span>
+          </button>
 
           <div className="mt-5 text-center text-xs text-gray-400">
             Not a {roleLabel.toLowerCase()}?{' '}

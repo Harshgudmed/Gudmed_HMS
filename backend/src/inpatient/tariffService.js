@@ -9,6 +9,12 @@ import { db } from '../config/db.js'
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24
 
+// Client billing rule: ONLY these service groups are plan-priced via the tariff
+// engine (different rate per payer plan — Cash/Insurance/Govt). Everything else
+// (Pharmacy, Lab/Pathology, Radiology, Implant/Other) is billed at its OWN
+// catalog/MRP/price-list — the same for every plan, no tariff markup.
+const TARIFFABLE_GROUPS = new Set(["BED", "DOCTOR_VISIT", "PROCEDURE", "SURGERY"]);
+
 function applyAdjustment(base, rule) {
   if (!rule) return base
   const v = rule.adjustmentValue || 0
@@ -100,6 +106,22 @@ export async function resolvePrice(organizationId, admissionId, { itemCode, base
     throw Object.assign(new Error('Provide itemCode or a base price'), { status: 400 })
   }
 
+  // Non-tariffable groups (Pharmacy/Lab/Radiology/Implant) bill at their OWN price —
+  // skip the tariff engine entirely (no plan markup, same for every payer plan).
+  if (group && !TARIFFABLE_GROUPS.has(group)) {
+    return {
+      price: Math.round(basePrice * 100) / 100,
+      base: basePrice,
+      serviceGroup: group,
+      bedCategoryId: null,
+      plan: { id: plan.id, name: plan.name, payerType: plan.payerType },
+      rule: null,
+      chargeItem: chargeItem
+        ? { id: chargeItem.id, code: chargeItem.code, name: chargeItem.name }
+        : null,
+    }
+  }
+
   const bedCategoryId = await resolveBedCategory(organizationId, admissionId, when)
   const rules = await db.tariffRule.findMany({ where: { organizationId, planId: plan.id } })
   const rule = pickBestRule(rules, { bedCategoryId, serviceGroup: group, serviceItemId: itemId }, when)
@@ -139,8 +161,12 @@ export async function priceForPharmacyItem(organizationId, admissionId, drugId, 
 
   const basePrice = drug.sellingPrice ?? drug.mrp ?? 0
 
-  // Apply ward/bed-category markup through the tariff engine (PHARMACY group).
-  // serviceItemId = drug id lets an admin add a drug-specific override rule later.
+  // Route through resolvePrice for ONE pricing path, but PHARMACY is a
+  // non-tariffable group — the gate inside resolvePrice short-circuits and
+  // returns the catalog price unchanged (no plan/ward markup, rule = null),
+  // same for every payer plan. Per the client rule, pharmacy never gets a tariff.
+  // serviceItemId = drug id is kept so an admin *could* add a drug-specific
+  // override rule in future, but today no markup is applied.
   const priced = await resolvePrice(organizationId, admissionId, {
     base: basePrice,
     serviceGroup: 'PHARMACY',
@@ -149,7 +175,7 @@ export async function priceForPharmacyItem(organizationId, admissionId, drugId, 
   })
 
   const qty = Math.max(1, Number(quantity) || 1)
-  const unitPrice = round2pub(priced.price) // markup-adjusted, pre-tax
+  const unitPrice = round2pub(priced.price) // catalog price, pre-tax (no markup for pharmacy)
   const lineSubtotal = round2pub(unitPrice * qty)
   const taxPct = drug.gstRate || 0
   const taxAmount = round2pub(lineSubtotal * taxPct / 100)

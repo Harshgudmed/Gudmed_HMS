@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { Loader2, Plus, Search, X, Clock, FlaskConical, Scan, Pill, Stethoscope, ChevronRight, AlertTriangle, Zap, ClipboardPlus, ArrowLeft } from 'lucide-react'
+import { Loader2, Plus, Search, X, Clock, FlaskConical, Scan, Pill, Stethoscope, ChevronRight, AlertTriangle, Zap, ClipboardPlus, ArrowLeft, Package, HeartPulse } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,11 +26,11 @@ const DRUG_FORMS = [
   "Solution",
   "Suspension",
 ];
-const TYPE_ICON = { LAB: FlaskConical, RADIOLOGY: Scan, PHARMACY: Pill, PROCEDURE: Stethoscope }
+const TYPE_ICON = { LAB: FlaskConical, RADIOLOGY: Scan, PHARMACY: Pill, PROCEDURE: Stethoscope, SUPPLY: Package, IMPLANT: HeartPulse }
 // Display labels only — the underlying orderType codes stay LAB/RADIOLOGY so the
 // catalog search, billing and order lifecycle keep working unchanged.
-const TYPE_LABEL = { LAB: 'Pathology', RADIOLOGY: 'Radiology', PHARMACY: 'Pharmacy', PROCEDURE: 'Procedure' }
-const TYPE_STYLE = { LAB: 'bg-sky-100 text-sky-800', RADIOLOGY: 'bg-indigo-100 text-indigo-800', PHARMACY: 'bg-violet-100 text-violet-800', PROCEDURE: 'bg-cyan-100 text-cyan-800' }
+const TYPE_LABEL = { LAB: 'Pathology', RADIOLOGY: 'Radiology', PHARMACY: 'Pharmacy', PROCEDURE: 'Procedure', SUPPLY: 'Supplies', IMPLANT: 'Implant' }
+const TYPE_STYLE = { LAB: 'bg-sky-100 text-sky-800', RADIOLOGY: 'bg-indigo-100 text-indigo-800', PHARMACY: 'bg-violet-100 text-violet-800', PROCEDURE: 'bg-cyan-100 text-cyan-800', SUPPLY: 'bg-emerald-100 text-emerald-800', IMPLANT: 'bg-orange-100 text-orange-800' }
 const PRIO_STYLE = { ROUTINE: 'bg-gray-100 text-gray-700', URGENT: 'bg-amber-100 text-amber-800', STAT: 'bg-red-100 text-red-800' }
 const STATUS_STYLE = { ORDERED: 'bg-gray-100 text-gray-700', ACKNOWLEDGED: 'bg-blue-100 text-blue-800', IN_PROGRESS: 'bg-amber-100 text-amber-800', COMPLETED: 'bg-green-100 text-green-800', CANCELLED: 'bg-rose-100 text-rose-700' }
 
@@ -41,6 +41,8 @@ const TYPE_RAIL = [
   { key: 'RADIOLOGY', label: 'Radiology', Icon: Scan, accent: 'text-indigo-600', ring: 'data-[on=true]:border-indigo-500 data-[on=true]:bg-indigo-50 data-[on=true]:text-indigo-700' },
   { key: 'PHARMACY', label: 'Meds', Icon: Pill, accent: 'text-violet-600', ring: 'data-[on=true]:border-violet-500 data-[on=true]:bg-violet-50 data-[on=true]:text-violet-700' },
   { key: 'PROCEDURE', label: 'Procedure', Icon: Stethoscope, accent: 'text-cyan-600', ring: 'data-[on=true]:border-cyan-500 data-[on=true]:bg-cyan-50 data-[on=true]:text-cyan-700' },
+  { key: 'SUPPLY', label: 'Supplies', Icon: Package, accent: 'text-emerald-600', ring: 'data-[on=true]:border-emerald-500 data-[on=true]:bg-emerald-50 data-[on=true]:text-emerald-700' },
+  { key: 'IMPLANT', label: 'Implant', Icon: HeartPulse, accent: 'text-orange-600', ring: 'data-[on=true]:border-orange-500 data-[on=true]:bg-orange-50 data-[on=true]:text-orange-700' },
 ]
 // Priority cards — color-coded, STAT emphasised (real-hospital convention).
 const PRIO_META = {

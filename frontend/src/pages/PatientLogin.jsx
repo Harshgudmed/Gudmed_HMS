@@ -112,6 +112,18 @@ export default function PatientLogin() {
             </Button>
           </form>
 
+          {/* Demo credentials — visible so clients can sign in without asking. */}
+          <button
+            type="button"
+            onClick={() => { setIdentifier('99999999999'); setPassword('Gudmed@123') }}
+            className="mt-4 w-full rounded-lg border border-dashed border-teal-300 bg-teal-50/60 px-3 py-2 text-left transition hover:bg-teal-50"
+          >
+            <span className="block text-[11px] font-semibold uppercase tracking-wide text-teal-700">🔑 Demo login — tap to fill</span>
+            <span className="mt-1 block text-xs text-gray-700">
+              99999999999 · <span className="font-mono font-medium">Gudmed@123</span>
+            </span>
+          </button>
+
           <div className="mt-5 text-center text-xs text-gray-400">
             Hospital staff?{' '}
             <Link to="/" className="text-teal-600 hover:underline">Staff login</Link>

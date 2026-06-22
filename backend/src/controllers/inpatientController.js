@@ -150,6 +150,7 @@ export async function getAll(req, res) {
     if (resource === "order")                     return await getOrderById(req, res, context);
     if (resource === "order-worklist")            return await getOrderWorklist(req, res, context);
     if (resource === "ipd-consultation")          return await getIpdConsultations(req, res, context);
+    if (resource === "patient-reports")           return await getPatientReports(req, res, context);
 
     return res
       .status(400)
@@ -379,12 +380,19 @@ async function getClinicalNotesLegacy(req, res, context) {
     where: { admissionId, organizationId: context.orgId },
     orderBy: { authoredAt: "asc" },
   });
-  const data = rows.map((n) => ({
-    id: n.id,
-    type: n.noteType || "Note",
-    text: n.body,
-    createdAt: n.authoredAt,
-    vitals: n.vitals || null,
+  // Reshape each DB note (ClinicalNote) into the simpler shape the View-Admission
+  // dialog expects. Keep these field names — InpatientModule renders n.type,
+  // n.text and n.createdAt, so renaming any of them would break the frontend.
+  //   DB field      →  frontend field
+  //   noteType      →  type        (falls back to "Note" if not set)
+  //   body          →  text
+  //   authoredAt    →  createdAt
+  const data = rows.map((note) => ({
+    id: note.id,
+    type: note.noteType || "Note",
+    text: note.body,
+    createdAt: note.authoredAt,
+    vitals: note.vitals || null,
   }));
   return res.json({ success: true, data });
 }
@@ -706,6 +714,94 @@ async function getIpdConsultations(req, res, context) {
   return res.json({ success: true, data: consultations });
 }
 
+// ── Lab + Radiology reports for a patient (doctor's IPD "Reports" tab) ──
+// The Laboratory/Radiology modules store results keyed by patientId (separate
+// from the IPD CPOE spine). The admission gives us the patientId, so we read
+// both result sets and merge them into one date-sorted list the doctor can read
+// without leaving the inpatient screen. Read-only.
+async function getPatientReports(req, res, context) {
+  const { orgId } = context;
+  const { admissionId } = req.query;
+  if (!admissionId)
+    return res
+      .status(400)
+      .json({ success: false, error: "admissionId required" });
+  const adm = await ownedAdmission(orgId, admissionId, {
+    id: true,
+    patientId: true,
+  });
+  if (!adm)
+    return res
+      .status(404)
+      .json({ success: false, error: "Admission not found" });
+
+  const [labOrders, radOrders] = await Promise.all([
+    db.labOrder.findMany({
+      where: { organizationId: orgId, patientId: adm.patientId },
+      orderBy: { orderDate: "desc" },
+      include: { results: true },
+    }),
+    db.radiologyOrder.findMany({
+      where: { organizationId: orgId, patientId: adm.patientId },
+      orderBy: { orderDate: "desc" },
+      include: {
+        exam: { select: { examName: true, examCode: true } },
+        report: true,
+      },
+    }),
+  ]);
+
+  // Lab: the ordered test names live in a JSON column; map testId → name so each
+  // result row can show a readable test name alongside its value/flag.
+  const labReports = labOrders.map((o) => {
+    let tests = [];
+    try {
+      tests = JSON.parse(o.tests || "[]");
+    } catch {
+      tests = [];
+    }
+    const nameByTestId = Object.fromEntries(
+      tests.map((t) => [t.testId, t.testName]),
+    );
+    return {
+      kind: "LAB",
+      id: o.id,
+      orderNumber: o.orderNumber,
+      name:
+        tests.map((t) => t.testName).filter(Boolean).join(", ") || "Lab Panel",
+      date: o.resultsReportedAt || o.orderDate,
+      status: o.status,
+      results: (o.results || []).map((r) => ({
+        testName: nameByTestId[r.testId] || r.testId,
+        value: r.resultValue,
+        unit: r.resultUnit || "",
+        flag: r.flag || null,
+        isAbnormal: r.isAbnormal,
+        isCritical: r.isCritical,
+        refRange: r.referenceRangeText || null,
+      })),
+    };
+  });
+
+  const radReports = radOrders.map((o) => ({
+    kind: "RADIOLOGY",
+    id: o.id,
+    orderNumber: o.orderNumber,
+    name: o.exam?.examName || "Radiology Exam",
+    date: o.report?.reportedAt || o.orderDate,
+    status: o.status,
+    findings: o.report?.findings || null,
+    impression: o.report?.impression || null,
+    hasCriticalFindings: o.report?.hasCriticalFindings || false,
+    reportStatus: o.report?.status || null,
+  }));
+
+  const data = [...labReports, ...radReports].sort(
+    (a, b) => new Date(b.date) - new Date(a.date),
+  );
+  return res.json({ success: true, data });
+}
+
 // ─── POST ─────────────────────────────────────────────────────────────────────
 
 export async function create(req, res) {
@@ -784,7 +880,6 @@ async function createConsultation(req, res, orgId, body) {
         return res.status(409).json({ success: false, error: "Patient is not currently admitted" });
 
       let consultation;
-      let charge;
       try {
         const actor = {
           id: req.user?.id || req.user?.userId || null,
@@ -804,11 +899,12 @@ async function createConsultation(req, res, orgId, body) {
               status:            "REQUESTED",
             },
           });
-          const billed = await billConsultation(tx, orgId, consult, actor);
-          return { consultation: consult, charge: billed.charge };
+          // Bills the consultation as a side-effect inside the same transaction.
+          // We don't need the returned charge here — only the consultation is sent back.
+          await billConsultation(tx, orgId, consult, actor);
+          return { consultation: consult };
         });
         consultation = result.consultation;
-        charge = result.charge;
       } catch (err) {
         console.error("Consultation creation/billing error:", err);
         return res.status(500).json({ success: false, error: "Failed to create and bill consultation" });

@@ -43,6 +43,24 @@ const SOURCES = {
     })
     return rows.map((r) => ({ orderType: 'PROCEDURE', serviceGroup: 'PROCEDURE', catalogModel: 'ChargeMaster', catalogItemId: r.id, name: r.name, code: r.code || null, category: null, basePrice: r.basePrice ?? null }))
   },
+  // Medical supplies / consumables / additional chargeable items (own price — non-tariffable).
+  SUPPLY: async (organizationId, q) => {
+    const rows = await db.chargeMaster.findMany({
+      where: { organizationId, isActive: true, serviceGroup: 'SUPPLY', ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] } : {}) },
+      take: TAKE, orderBy: { name: 'asc' },
+      select: { id: true, name: true, code: true, basePrice: true },
+    })
+    return rows.map((r) => ({ orderType: 'SUPPLY', serviceGroup: 'SUPPLY', catalogModel: 'ChargeMaster', catalogItemId: r.id, name: r.name, code: r.code || null, category: null, basePrice: r.basePrice ?? null }))
+  },
+  // Specialty / implant orders (pacemaker, stent, gene test, hearing aid… — own price).
+  IMPLANT: async (organizationId, q) => {
+    const rows = await db.chargeMaster.findMany({
+      where: { organizationId, isActive: true, serviceGroup: 'IMPLANT', ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] } : {}) },
+      take: TAKE, orderBy: { name: 'asc' },
+      select: { id: true, name: true, code: true, basePrice: true },
+    })
+    return rows.map((r) => ({ orderType: 'IMPLANT', serviceGroup: 'IMPLANT', catalogModel: 'ChargeMaster', catalogItemId: r.id, name: r.name, code: r.code || null, category: null, basePrice: r.basePrice ?? null }))
+  },
 }
 
 /**

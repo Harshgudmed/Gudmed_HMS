@@ -46,11 +46,15 @@ const isPrivateLan = (origin) =>
 // a unique hashed subdomain, so listing them one-by-one is endless whack-a-mole.
 const isVercelApp = (origin) => /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)
 
+// Allow Cloudflare quick-tunnels (cloudflared tunnel --url) for sharing a local
+// demo with a remote client. Dev-only — gated behind NODE_ENV !== 'production'.
+const isCloudflareTunnel = (origin) => /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(origin)
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
     if (isVercelApp(origin)) return cb(null, true)
-    if (process.env.NODE_ENV !== 'production' && (isLocalhost(origin) || isPrivateLan(origin))) return cb(null, true)
+    if (process.env.NODE_ENV !== 'production' && (isLocalhost(origin) || isPrivateLan(origin) || isCloudflareTunnel(origin))) return cb(null, true)
     cb(new Error(`CORS blocked: ${origin}`))
   },
   credentials: true,
