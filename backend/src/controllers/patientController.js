@@ -83,7 +83,9 @@ export async function getAll(req, res, next) {
   try {
     const organizationId = getOrgId(req)
     const search = req.query.search || ''
-    const status = req.query.status || 'all'
+    // Default to active only so soft-deleted (deactivated) patients drop out of
+    // the main list. Pass ?status=inactive or ?status=all to see deactivated ones.
+    const status = req.query.status || 'active'
     const limit = parseInt(req.query.limit || '50')
     const offset = parseInt(req.query.offset || '0')
 
@@ -349,12 +351,19 @@ export async function remove(req, res, next) {
   try {
     const organizationId = getOrgId(req)
     const { id } = req.params
-    await db.patient.delete({ where: { id, organizationId } })
-    res.json({ success: true, message: "Patient deleted successfully" })
-  } catch (err) {
-    if (err.code === "P2025") {
+    // SOFT DELETE: a patient's medical/legal record must never be erased
+    // (record-retention; admissions/bills/results point to it). We mark the
+    // patient inactive so they drop out of the active list but all history is
+    // preserved. updateMany is org-scoped → also returns count for not-found.
+    const result = await db.patient.updateMany({
+      where: { id, organizationId },
+      data: { isActive: false },
+    })
+    if (result.count === 0) {
       return res.status(404).json({ success: false, error: "Patient not found" })
     }
+    res.json({ success: true, message: "Patient deactivated" })
+  } catch (err) {
     next(err)
   }
 }

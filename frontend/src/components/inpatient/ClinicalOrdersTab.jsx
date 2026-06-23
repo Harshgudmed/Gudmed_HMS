@@ -274,18 +274,31 @@ function NewOrderView({ admissionId, patientLabel, onClose, onPlaced }) {
     setSaving(false)
   }
 
-  const estimate = picked?.basePrice != null ? Number(picked.basePrice) * (Number(form.quantity) || 1) : null
+  // How many billable units this order will generate:
+  //  - with a schedule (freq + duration) → occurrences = perDay × days (the full
+  //    course), which is what the nurse will tick and what actually gets billed.
+  //  - SOS / single (no per-day pattern) → 1.
+  //  - no frequency at all → fall back to the Quantity field.
+  const perDay = form.frequency ? timesPerDay(form.frequency) : 0
+  const durationDays = Math.min(parseInt((String(form.duration).match(/\d+/) || [])[0] || '', 10) || 0, 14)
+  const occurrenceCount = !form.frequency
+    ? (Number(form.quantity) || 1)
+    : perDay === 0
+      ? 1
+      : (durationDays ? perDay * durationDays : perDay)
+
+  // Estimate now reflects the WHOLE course: unit price × occurrences (e.g. CBC
+  // ₹350 × 12 collections = ₹4,200) — consistent across lab, imaging & medicine.
+  const estimate = picked?.basePrice != null ? Number(picked.basePrice) * occurrenceCount : null
 
   // Live schedule preview ("3×/day × 4 days = 12 collections") so the doctor sees
   // exactly what lands on the nurse's Treatment Chart.
   const schedulePreview = (() => {
     if (!form.frequency) return null
-    const perDay = timesPerDay(form.frequency)
-    const days = Math.min(parseInt((String(form.duration).match(/\d+/) || [])[0] || '', 10) || 0, 14)
     const noun = picked?.orderType === 'PHARMACY' ? 'doses' : picked?.orderType === 'RADIOLOGY' ? 'scans' : 'collections'
     if (perDay === 0) return `1 ${noun.slice(0, -1)} (single / SOS)`
-    if (!days) return `${perDay}×/day — set duration to see total`
-    return `${perDay}×/day × ${days} day${days > 1 ? 's' : ''} = ${perDay * days} ${noun}`
+    if (!durationDays) return `${perDay}×/day — set duration to see total`
+    return `${perDay}×/day × ${durationDays} day${durationDays > 1 ? 's' : ''} = ${perDay * durationDays} ${noun}`
   })()
 
   return (
@@ -467,7 +480,15 @@ function NewOrderView({ admissionId, patientLabel, onClose, onPlaced }) {
                     <div className="border-t pt-3 flex items-center gap-3">
                       <div className="flex-1 text-sm">
                         <Badge className={PRIO_STYLE[form.priority]} variant="secondary">{form.priority}</Badge>
-                        {estimate != null && <span className="ml-2 text-gray-500">est. <span className="font-semibold text-gray-800">₹{estimate}</span></span>}
+                        {estimate != null && (
+                          <span className="ml-2 text-gray-500">
+                            est.{' '}
+                            {occurrenceCount > 1 && (
+                              <span className="text-gray-400">{occurrenceCount} × ₹{Number(picked.basePrice).toLocaleString('en-IN')} = </span>
+                            )}
+                            <span className="font-semibold text-gray-800">₹{estimate.toLocaleString('en-IN')}</span>
+                          </span>
+                        )}
                       </div>
                       <Button onClick={place} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
                         {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-1" />}Place Order

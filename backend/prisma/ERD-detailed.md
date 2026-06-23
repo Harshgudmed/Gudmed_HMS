@@ -94,6 +94,8 @@ cancelled cancelled
     String departmentId "❓"
     String specialization "❓"
     String licenseNumber "❓"
+    Float consultationFee "❓"
+    Int followUpDays "❓"
     Boolean isActive 
     DateTime lastLoginAt "❓"
     String preferences "❓"
@@ -125,6 +127,8 @@ cancelled cancelled
     String organizationId 
     String mrn 
     String externalId "❓"
+    String passwordHash "❓"
+    String assignedCrmUserId "❓"
     String firstName 
     String middleName "❓"
     String lastName 
@@ -139,6 +143,8 @@ cancelled cancelled
     String woreda "❓"
     String kebele "❓"
     String houseNumber "❓"
+    String postalCode "❓"
+    String addressDescription "❓"
     String emergencyContactName "❓"
     String emergencyContactPhone "❓"
     String emergencyContactRelationship "❓"
@@ -152,6 +158,8 @@ cancelled cancelled
     String insuranceCoverageDetails "❓"
     String photoUrl "❓"
     String maritalStatus "❓"
+    String referredBy "❓"
+    String mlcNumber "❓"
     String occupation "❓"
     String educationLevel "❓"
     Boolean isActive 
@@ -161,6 +169,18 @@ cancelled cancelled
     DateTime updatedAt 
     String createdById "❓"
     String updatedById "❓"
+    }
+  
+
+  "PatientDocument" {
+    String id "🗝️"
+    String organizationId 
+    String patientId 
+    String documentType 
+    String title "❓"
+    String fileUrl 
+    String fileType "❓"
+    DateTime uploadedAt 
     }
   
 
@@ -267,10 +287,10 @@ cancelled cancelled
     String doctorId "❓"
     DateTime appointmentDate 
     String appointmentTime 
-    Int durationMinutes 
     String appointmentType "❓"
     String departmentId "❓"
     String priority 
+    Float consultationFee "❓"
     String status 
     String chiefComplaint "❓"
     String notes "❓"
@@ -334,6 +354,7 @@ cancelled cancelled
     String code "❓"
     String type "❓"
     Int capacity 
+    String building "❓"
     String floor "❓"
     String chargeNurse "❓"
     String phone "❓"
@@ -347,6 +368,7 @@ cancelled cancelled
     String id "🗝️"
     String organizationId 
     String wardId 
+    String bedCategoryId "❓"
     String bedNumber 
     String type "❓"
     String status 
@@ -370,9 +392,12 @@ cancelled cancelled
     Float depositAmount "❓"
     String admissionNotes "❓"
     Boolean isCritical 
+    String criticalLevel "❓"
     String admittingDoctorId "❓"
     String attendingDoctorId "❓"
     String status 
+    String admissionState "❓"
+    String dischargeType "❓"
     DateTime dischargeDate "❓"
     String dischargeReason "❓"
     String dischargeDiagnosis "❓"
@@ -453,6 +478,12 @@ cancelled cancelled
     Float costPrice "❓"
     Float sellingPrice "❓"
     Float markupPercentage "❓"
+    Float purchasePrice "❓"
+    Float mrp "❓"
+    Float gstRate "❓"
+    String hsnCode "❓"
+    String barcode "❓"
+    String manufacturer "❓"
     String storageLocation "❓"
     Boolean requiresPrescription 
     String supplierName "❓"
@@ -482,6 +513,7 @@ cancelled cancelled
     Float totalCost "❓"
     String supplierName "❓"
     String supplierInvoice "❓"
+    String vendorId "❓"
     String status 
     DateTime createdAt 
     String createdById "❓"
@@ -540,6 +572,7 @@ cancelled cancelled
     String supplierName 
     String supplierContact "❓"
     String supplierEmail "❓"
+    String vendorId "❓"
     DateTime orderDate 
     DateTime expectedDeliveryDate "❓"
     DateTime receivedDate "❓"
@@ -549,6 +582,49 @@ cancelled cancelled
     String cancellationNote "❓"
     DateTime createdAt 
     DateTime updatedAt 
+    }
+  
+
+  "StockLedger" {
+    String id "🗝️"
+    String organizationId 
+    String drugId 
+    String batchId "❓"
+    String changeType 
+    Int quantityDelta 
+    Int balanceAfter 
+    String reference "❓"
+    String note "❓"
+    String createdById "❓"
+    DateTime createdAt 
+    }
+  
+
+  "Vendor" {
+    String id "🗝️"
+    String organizationId 
+    String name 
+    String contactPerson "❓"
+    String phone "❓"
+    String email "❓"
+    String gstNumber "❓"
+    String address "❓"
+    Boolean isActive 
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "MedicineReference" {
+    String id "🗝️"
+    String name 
+    String nameLower 
+    Float price "❓"
+    String manufacturer "❓"
+    String type "❓"
+    String packSize "❓"
+    String composition "❓"
+    Boolean isDiscontinued 
     }
   
 
@@ -790,6 +866,20 @@ cancelled cancelled
     }
   
 
+  "DoctorFeeSlab" {
+    String id "🗝️"
+    String organizationId 
+    String doctorId 
+    Int fromDays 
+    Int toDays 
+    Float feeAmount 
+    Boolean isActive 
+    String notes "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
   "DoctorCommissionConfig" {
     String id "🗝️"
     String organizationId 
@@ -1011,11 +1101,451 @@ cancelled cancelled
     DateTime updatedAt 
     }
   
+
+  "BedCategory" {
+    String id "🗝️"
+    String organizationId 
+    String name 
+    String code 
+    Int rank 
+    Float defaultBedDayRate "❓"
+    Boolean isCritical 
+    Boolean isActive 
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "TariffPlan" {
+    String id "🗝️"
+    String organizationId 
+    String name 
+    String payerType 
+    DateTime validFrom 
+    DateTime validTo "❓"
+    Boolean isDefault 
+    Boolean isActive 
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "ChargeMaster" {
+    String id "🗝️"
+    String organizationId 
+    String code 
+    String name 
+    String serviceGroup 
+    String uom "❓"
+    Float basePrice 
+    Float taxRatePct 
+    Boolean isActive 
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "TariffRule" {
+    String id "🗝️"
+    String organizationId 
+    String planId 
+    String bedCategoryId "❓"
+    String serviceGroup "❓"
+    String serviceItemId "❓"
+    String adjustmentType 
+    Float adjustmentValue 
+    DateTime validFrom 
+    DateTime validTo "❓"
+    DateTime createdAt 
+    }
+  
+
+  "PatientTariff" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String planId 
+    String payerType 
+    String corporateId "❓"
+    String insurancePolicyId "❓"
+    DateTime lockedAt 
+    }
+  
+
+  "BedOccupancy" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String bedId 
+    String bedCategoryId "❓"
+    DateTime startAt 
+    DateTime endAt "❓"
+    String reason "❓"
+    }
+  
+
+  "IpdCharge" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String chargeItemId "❓"
+    String description 
+    String serviceGroup 
+    Float unitPrice 
+    Float quantity 
+    Json resolvedFrom "❓"
+    DateTime serviceDate 
+    String sourceModule "❓"
+    String sourceRef "❓"
+    DateTime createdAt 
+    Float taxPct 
+    Float taxAmount 
+    Float discountPct 
+    Float discountAmount 
+    Float lineTotal 
+    String postedById "❓"
+    String postedByName "❓"
+    String status 
+    String cancelReason "❓"
+    String cancelledById "❓"
+    DateTime cancelledAt "❓"
+    String billId "❓"
+    }
+  
+
+  "Bill" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String billNumber "❓"
+    String status 
+    String billType 
+    String payerType 
+    Float bedTotal 
+    Float serviceTotal 
+    Float subtotal 
+    Float taxTotal 
+    Float discountTotal 
+    Float depositTotal 
+    Float payableTotal 
+    Float paidTotal 
+    Float balanceDue 
+    String paymentStatus 
+    String cancelReason "❓"
+    DateTime finalizedAt "❓"
+    String createdById "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "BillPayment" {
+    String id "🗝️"
+    String organizationId 
+    String billId "❓"
+    String admissionId 
+    String receiptNumber "❓"
+    String type 
+    Float amount 
+    String method 
+    String reference "❓"
+    String status 
+    String voidReason "❓"
+    String note "❓"
+    String creditNoteId "❓"
+    String idempotencyKey "❓"
+    String receivedById "❓"
+    String receivedByName "❓"
+    DateTime paidAt 
+    DateTime createdAt 
+    }
+  
+
+  "BillCounter" {
+    String id "🗝️"
+    String organizationId 
+    String series 
+    String year 
+    Int value 
+    }
+  
+
+  "VitalsRecord" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    DateTime recordedAt 
+    Int systolicBp "❓"
+    Int diastolicBp "❓"
+    Int heartRate "❓"
+    Int respiratoryRate "❓"
+    Float spo2 "❓"
+    Float tempC "❓"
+    Int painScore "❓"
+    String consciousness "❓"
+    Int gcs "❓"
+    Int intakeMl "❓"
+    Int outputMl "❓"
+    Float bloodSugar "❓"
+    Int newsScore "❓"
+    String newsRisk "❓"
+    String recordedById "❓"
+    String recordedByName "❓"
+    String notes "❓"
+    }
+  
+
+  "ClinicalNote" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String noteType 
+    String body 
+    String authorId "❓"
+    String authorName "❓"
+    DateTime authoredAt 
+    String parentId "❓"
+    Json vitals "❓"
+    }
+  
+
+  "MedicationAdministration" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String prescriptionId "❓"
+    String drugName 
+    String dosage "❓"
+    String route "❓"
+    DateTime scheduledAt "❓"
+    DateTime administeredAt "❓"
+    String status 
+    String reason "❓"
+    String nurseId "❓"
+    String nurseName "❓"
+    DateTime createdAt 
+    }
+  
+
+  "DischargeClearance" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String type 
+    String status 
+    String clearedById "❓"
+    String clearedByName "❓"
+    DateTime clearedAt "❓"
+    String remark "❓"
+    DateTime createdAt 
+    }
+  
+
+  "HousekeepingTask" {
+    String id "🗝️"
+    String organizationId 
+    String bedId 
+    String admissionId "❓"
+    String type 
+    String status 
+    String assignedToName "❓"
+    String notes "❓"
+    DateTime openedAt 
+    DateTime closedAt "❓"
+    }
+  
+
+  "ClinicalOrder" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String patientId 
+    String orderType 
+    String catalogModel "❓"
+    String catalogItemId "❓"
+    String itemName 
+    String itemCode "❓"
+    String serviceGroup 
+    String priority 
+    Float quantity 
+    String frequency "❓"
+    String dosage "❓"
+    String route "❓"
+    String duration "❓"
+    String clinicalIndication "❓"
+    String notes "❓"
+    String status 
+    String domainStatus "❓"
+    String orderedById "❓"
+    String orderedByName "❓"
+    DateTime orderedAt 
+    String acknowledgedById "❓"
+    String acknowledgedByName "❓"
+    DateTime acknowledgedAt "❓"
+    String startedById "❓"
+    String startedByName "❓"
+    DateTime startedAt "❓"
+    String completedById "❓"
+    String completedByName "❓"
+    DateTime completedAt "❓"
+    String cancelledById "❓"
+    String cancelledByName "❓"
+    DateTime cancelledAt "❓"
+    String cancelReason "❓"
+    String executorModel "❓"
+    String executorId "❓"
+    Boolean billed 
+    String ipdChargeId "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "OrderTask" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String orderId 
+    String orderType 
+    String itemName 
+    DateTime scheduledAt 
+    String status 
+    DateTime doneAt "❓"
+    String doneById "❓"
+    String doneByName "❓"
+    String resultValue "❓"
+    String notes "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
+
+  "ClinicalOrderEvent" {
+    String id "🗝️"
+    String organizationId 
+    String orderId 
+    String fromStatus "❓"
+    String toStatus 
+    String actorId "❓"
+    String actorName "❓"
+    String actorRole "❓"
+    String remark "❓"
+    DateTime at 
+    }
+  
+
+  "AmbulanceTrip" {
+    String id "🗝️"
+    String organizationId 
+    String patientId "❓"
+    String tripNumber 
+    String ambulanceType 
+    String fromLocation "❓"
+    String toLocation "❓"
+    Float distanceKm "❓"
+    Float charge 
+    String status 
+    DateTime tripDate 
+    String driverName "❓"
+    String vehicleNumber "❓"
+    String contactPhone "❓"
+    String notes "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    String createdById "❓"
+    }
+  
+
+  "DayCareCase" {
+    String id "🗝️"
+    String organizationId 
+    String patientId 
+    String caseNumber 
+    String doctorId "❓"
+    String doctorName "❓"
+    String procedure "❓"
+    DateTime admissionDate 
+    String dischargeTime "❓"
+    Float fee 
+    String paymentStatus 
+    Float amountPaid 
+    String status 
+    String notes "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    String createdById "❓"
+    }
+  
+
+  "InsuranceCase" {
+    String id "🗝️"
+    String organizationId 
+    String patientId 
+    String payerType 
+    String insurerName 
+    String tpaName "❓"
+    String policyNumber "❓"
+    Float coverageLimit 
+    String status 
+    DateTime validFrom "❓"
+    DateTime validTo "❓"
+    String notes "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    String createdById "❓"
+    }
+  
+
+  "InsuranceClaim" {
+    String id "🗝️"
+    String organizationId 
+    String caseId 
+    String claimNumber 
+    Float claimAmount 
+    Float approvedAmount "❓"
+    String status 
+    String diagnosis "❓"
+    String remarks "❓"
+    DateTime submittedAt "❓"
+    DateTime settledAt "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    String createdById "❓"
+    }
+  
+
+  "IpdConsultation" {
+    String id "🗝️"
+    String organizationId 
+    String admissionId 
+    String consultingDoctorId 
+    String requestedById "❓"
+    String departmentId "❓"
+    DateTime requestedAt 
+    DateTime scheduledAt "❓"
+    DateTime completedAt "❓"
+    String status 
+    String referralReason "❓"
+    String consultationNotes "❓"
+    String diagnosis "❓"
+    String recommendedPlan "❓"
+    Boolean followUpRequired 
+    String followUpNotes "❓"
+    String ipdChargeId "❓"
+    Float feeApplied "❓"
+    Float commissionAmount "❓"
+    DateTime createdAt 
+    DateTime updatedAt 
+    }
+  
     "User" }o--|| "Organization" : "organization"
     "User" }o--|o "Department" : "department"
     "User" |o--|o "User" : "invitedBy"
     "Department" }o--|| "Organization" : "organization"
     "Patient" }o--|| "Organization" : "organization"
+    "Patient" }o--|o "User" : "assignedCrmUser"
+    "PatientDocument" }o--|| "Organization" : "organization"
+    "PatientDocument" }o--|| "Patient" : "patient"
     "PreTriage" }o--|| "Organization" : "organization"
     "PreTriage" }o--|o "Patient" : "patient"
     "PreTriage" }o--|o "User" : "screenedBy"
@@ -1038,15 +1568,20 @@ cancelled cancelled
     "Ward" }o--|o "Department" : "department"
     "Bed" }o--|| "Organization" : "organization"
     "Bed" }o--|| "Ward" : "ward"
+    "Bed" }o--|o "BedCategory" : "bedCategory"
     "Admission" }o--|| "Organization" : "organization"
     "Admission" }o--|| "Patient" : "patient"
     "Admission" }o--|o "Bed" : "bed"
+    "Admission" }o--|o "User" : "attendingDoctor"
+    "Admission" }o--|o "User" : "admittingDoctor"
+    "Admission" }o--|o "User" : "dischargeDoctor"
     "DeathCertificate" }o--|| "Organization" : "organization"
     "DeathCertificate" }o--|| "Patient" : "patient"
     "DeathCertificate" }o--|o "User" : "certifiedBy"
     "DeathCertificate" }o--|o "User" : "issuedBy"
     "PharmacyDrug" }o--|| "Organization" : "organization"
     "PharmacyBatch" }o--|| "PharmacyDrug" : "drug"
+    "PharmacyBatch" }o--|o "Vendor" : "vendor"
     "Prescription" }o--|| "Organization" : "organization"
     "Prescription" }o--|| "Patient" : "patient"
     "Prescription" }o--|o "Consultation" : "consultation"
@@ -1057,6 +1592,9 @@ cancelled cancelled
     "PharmacySale" }o--|o "Prescription" : "prescription"
     "PharmacySale" }o--|o "User" : "servedBy"
     "PharmacyPurchaseOrder" }o--|| "Organization" : "organization"
+    "PharmacyPurchaseOrder" }o--|o "Vendor" : "vendor"
+    "StockLedger" }o--|| "PharmacyDrug" : "drug"
+    "Vendor" }o--|| "Organization" : "organization"
     "LabTest" }o--|| "Organization" : "organization"
     "LabOrder" }o--|| "Organization" : "organization"
     "LabOrder" }o--|| "Patient" : "patient"
@@ -1086,6 +1624,8 @@ cancelled cancelled
     "Payment" }o--|| "Invoice" : "invoice"
     "Payment" }o--|o "Patient" : "patient"
     "Payment" }o--|o "User" : "processedBy"
+    "DoctorFeeSlab" }o--|| "Organization" : "organization"
+    "DoctorFeeSlab" }o--|| "User" : "doctor"
     "DoctorCommissionConfig" }o--|| "Organization" : "organization"
     "DoctorCommissionConfig" |o--|| "User" : "doctor"
     "DoctorCommission" }o--|| "Organization" : "organization"
@@ -1114,4 +1654,56 @@ cancelled cancelled
     "EaptsMedicationMapping" }o--|| "Organization" : "organization"
     "EaptsMedicationMapping" }o--|| "PharmacyDrug" : "drug"
     "EaptsTransaction" }o--|| "Organization" : "organization"
+    "BedCategory" }o--|| "Organization" : "organization"
+    "TariffPlan" }o--|| "Organization" : "organization"
+    "ChargeMaster" }o--|| "Organization" : "organization"
+    "TariffRule" }o--|| "Organization" : "organization"
+    "TariffRule" }o--|| "TariffPlan" : "plan"
+    "PatientTariff" }o--|| "Organization" : "organization"
+    "PatientTariff" |o--|| "Admission" : "admission"
+    "BedOccupancy" }o--|| "Organization" : "organization"
+    "BedOccupancy" }o--|| "Admission" : "admission"
+    "BedOccupancy" }o--|| "Bed" : "bed"
+    "BedOccupancy" }o--|o "BedCategory" : "bedCategory"
+    "IpdCharge" }o--|| "Organization" : "organization"
+    "IpdCharge" }o--|| "Admission" : "admission"
+    "IpdCharge" }o--|o "ChargeMaster" : "chargeItem"
+    "IpdCharge" }o--|o "Bill" : "bill"
+    "Bill" }o--|| "Organization" : "organization"
+    "Bill" }o--|| "Admission" : "admission"
+    "BillPayment" }o--|| "Organization" : "organization"
+    "BillPayment" }o--|o "Bill" : "bill"
+    "BillPayment" }o--|| "Admission" : "admission"
+    "BillCounter" }o--|| "Organization" : "organization"
+    "VitalsRecord" }o--|| "Organization" : "organization"
+    "VitalsRecord" }o--|| "Admission" : "admission"
+    "ClinicalNote" }o--|| "Organization" : "organization"
+    "ClinicalNote" }o--|| "Admission" : "admission"
+    "MedicationAdministration" }o--|| "Organization" : "organization"
+    "MedicationAdministration" }o--|| "Admission" : "admission"
+    "DischargeClearance" }o--|| "Organization" : "organization"
+    "DischargeClearance" }o--|| "Admission" : "admission"
+    "HousekeepingTask" }o--|| "Organization" : "organization"
+    "HousekeepingTask" }o--|| "Bed" : "bed"
+    "ClinicalOrder" }o--|| "Organization" : "organization"
+    "ClinicalOrder" }o--|| "Admission" : "admission"
+    "OrderTask" }o--|| "Organization" : "organization"
+    "OrderTask" }o--|| "Admission" : "admission"
+    "OrderTask" }o--|| "ClinicalOrder" : "order"
+    "ClinicalOrderEvent" }o--|| "ClinicalOrder" : "order"
+    "AmbulanceTrip" }o--|| "Organization" : "organization"
+    "AmbulanceTrip" }o--|o "Patient" : "patient"
+    "DayCareCase" }o--|| "Organization" : "organization"
+    "DayCareCase" }o--|| "Patient" : "patient"
+    "DayCareCase" }o--|o "User" : "doctor"
+    "InsuranceCase" }o--|| "Organization" : "organization"
+    "InsuranceCase" }o--|| "Patient" : "patient"
+    "InsuranceClaim" }o--|| "Organization" : "organization"
+    "InsuranceClaim" }o--|| "InsuranceCase" : "case"
+    "IpdConsultation" }o--|| "Organization" : "organization"
+    "IpdConsultation" }o--|| "Admission" : "admission"
+    "IpdConsultation" }o--|| "User" : "consultingDoctor"
+    "IpdConsultation" }o--|o "User" : "requestedBy"
+    "IpdConsultation" }o--|o "Department" : "department"
+    "IpdConsultation" |o--|o "IpdCharge" : "ipdCharge"
 ```
